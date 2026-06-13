@@ -71,11 +71,18 @@ func (k *passKeyring) pass(args ...string) *exec.Cmd {
 }
 
 func (k *passKeyring) Get(key string) (Item, error) {
-	if !k.itemExists(key) {
+	exists, err := k.itemExists(key)
+	if err != nil {
+		return Item{}, err
+	}
+	if !exists {
 		return Item{}, ErrKeyNotFound
 	}
 
-	name := filepath.Join(k.prefix, key)
+	name, err := passEntryName(k.prefix, key)
+	if err != nil {
+		return Item{}, err
+	}
 	cmd := k.pass("show", name)
 	output, err := cmd.Output()
 	if err != nil {
@@ -98,7 +105,10 @@ func (k *passKeyring) Set(i Item) error {
 		return err
 	}
 
-	name := filepath.Join(k.prefix, i.Key)
+	name, err := passEntryName(k.prefix, i.Key)
+	if err != nil {
+		return err
+	}
 	cmd := k.pass("insert", "-m", "-f", name)
 	cmd.Stdin = strings.NewReader(string(bytes))
 
@@ -111,13 +121,20 @@ func (k *passKeyring) Set(i Item) error {
 }
 
 func (k *passKeyring) Remove(key string) error {
-	if !k.itemExists(key) {
+	exists, err := k.itemExists(key)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		return ErrKeyNotFound
 	}
 
-	name := filepath.Join(k.prefix, key)
+	name, err := passEntryName(k.prefix, key)
+	if err != nil {
+		return err
+	}
 	cmd := k.pass("rm", "-f", name)
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return err
 	}
@@ -125,16 +142,22 @@ func (k *passKeyring) Remove(key string) error {
 	return nil
 }
 
-func (k *passKeyring) itemExists(key string) bool {
-	var path = filepath.Join(k.dir, k.prefix, key+".gpg")
-	_, err := os.Stat(path)
+func (k *passKeyring) itemExists(key string) (bool, error) {
+	path, err := k.passEntryPath(key)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(path)
 
-	return err == nil
+	return err == nil, nil
 }
 
 func (k *passKeyring) Keys() ([]string, error) {
 	var keys = []string{}
-	var path = filepath.Join(k.dir, k.prefix)
+	path, err := passPrefixPath(k.dir, k.prefix)
+	if err != nil {
+		return nil, err
+	}
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -163,4 +186,54 @@ func (k *passKeyring) Keys() ([]string, error) {
 	})
 
 	return keys, err
+}
+
+func (k *passKeyring) passEntryPath(key string) (string, error) {
+	name, err := passEntryName(k.prefix, key)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(k.dir, name+".gpg"), nil
+}
+
+func passPrefixPath(dir, prefix string) (string, error) {
+	if err := validatePassPathPart("prefix", prefix); err != nil {
+		return "", err
+	}
+	if prefix == "" {
+		return dir, nil
+	}
+	return filepath.Join(dir, prefix), nil
+}
+
+func passEntryName(prefix, key string) (string, error) {
+	if err := validatePassPathPart("prefix", prefix); err != nil {
+		return "", err
+	}
+	if key == "" {
+		return "", fmt.Errorf("invalid pass key %q: empty keys are not allowed", key)
+	}
+	if err := validatePassPathPart("key", key); err != nil {
+		return "", err
+	}
+	if prefix == "" {
+		return key, nil
+	}
+	return filepath.Join(prefix, key), nil
+}
+
+func validatePassPathPart(label, value string) error {
+	if value == "" {
+		return nil
+	}
+	if filepath.IsAbs(value) {
+		return fmt.Errorf("invalid pass %s %q: absolute paths are not allowed", label, value)
+	}
+	for _, part := range strings.Split(value, string(os.PathSeparator)) {
+		if part == "." || part == ".." {
+			return fmt.Errorf("invalid pass %s %q: dot path segments are not allowed", label, value)
+		}
+	}
+	return nil
 }

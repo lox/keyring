@@ -5,11 +5,13 @@ package keyring
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -240,6 +242,81 @@ func TestPassKeyringGetMetadataUnsupported(t *testing.T) {
 	_, err := k.GetMetadata("no-such-key")
 	if err != ErrMetadataNotSupported {
 		t.Fatalf("expected ErrMetadataNotSupported, got: %v", err)
+	}
+}
+
+func TestPassEntryNameAllowsNestedKeys(t *testing.T) {
+	name, err := passEntryName("keyring", "africa/elephants")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != filepath.Join("keyring", "africa", "elephants") {
+		t.Fatalf("unexpected pass entry name: %q", name)
+	}
+}
+
+func TestPassEntryNameRejectsTraversal(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+		key    string
+	}{
+		{name: "key escapes prefix", prefix: "keyring", key: "../other-app/token"},
+		{name: "nested key escapes prefix", prefix: "keyring", key: "team/../../token"},
+		{name: "dot key targets prefix parent", prefix: "keyring", key: "."},
+		{name: "dot slash key targets prefix parent", prefix: "keyring", key: "./"},
+		{name: "nested dot key aliases another key", prefix: "keyring", key: "team/./token"},
+		{name: "empty key targets prefix parent", prefix: "keyring", key: ""},
+		{name: "absolute key", prefix: "keyring", key: "/tmp/token"},
+		{name: "prefix escapes store", prefix: "../other-app", key: "token"},
+		{name: "nested prefix escapes store", prefix: "keyring/../other-app", key: "token"},
+		{name: "dot prefix targets store root", prefix: ".", key: "token"},
+		{name: "nested dot prefix aliases another prefix", prefix: "keyring/./team", key: "token"},
+		{name: "absolute prefix", prefix: "/tmp/keyring", key: "token"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := passEntryName(tt.prefix, tt.key); err == nil {
+				t.Fatal("expected traversal error")
+			}
+		})
+	}
+}
+
+func TestPassKeyringMethodsRejectTraversalBeforeCommand(t *testing.T) {
+	k := &passKeyring{
+		dir:     t.TempDir(),
+		passcmd: "pass-command-should-not-run",
+		prefix:  "keyring",
+	}
+
+	if err := k.Set(Item{Key: "../other-app/token", Data: []byte("secret")}); err == nil {
+		t.Fatal("expected Set to reject traversal")
+	}
+
+	if _, err := k.Get("../other-app/token"); err == nil {
+		t.Fatal("expected Get to reject traversal")
+	}
+
+	if err := k.Remove("../other-app/token"); err == nil {
+		t.Fatal("expected Remove to reject traversal")
+	}
+}
+
+func TestPassKeyringKeysRejectsTraversalPrefix(t *testing.T) {
+	k := &passKeyring{
+		dir:     t.TempDir(),
+		passcmd: "pass",
+		prefix:  "../other-app",
+	}
+
+	_, err := k.Keys()
+	if err == nil {
+		t.Fatal("expected Keys to reject traversal prefix")
+	}
+	if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("expected validation error before filesystem access, got: %v", err)
 	}
 }
 
