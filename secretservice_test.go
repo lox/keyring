@@ -4,6 +4,7 @@
 package keyring
 
 import (
+	"errors"
 	"os"
 	"sort"
 	"testing"
@@ -41,6 +42,29 @@ func libSecretSetup(t *testing.T) (Keyring, func(t *testing.T)) {
 		if err := kr.deleteCollection(); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestLibSecretOpenFallsBackWhenDBusIsUnavailable(t *testing.T) {
+	dbusErr := errors.New("dbus unavailable")
+	originalNewService := newLibSecretService
+	newLibSecretService = func() (*libsecret.Service, error) {
+		return nil, dbusErr
+	}
+	t.Cleanup(func() {
+		newLibSecretService = originalNewService
+	})
+
+	ring, err := Open(Config{
+		AllowedBackends:  []BackendType{SecretServiceBackend, FileBackend},
+		FileDir:          t.TempDir(),
+		FilePasswordFunc: FixedStringPrompt("test password"),
+	})
+	if err != nil {
+		t.Fatalf("expected file fallback after Secret Service opener failure, got %v", err)
+	}
+	if _, ok := ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring fallback, got %T", ring)
 	}
 }
 

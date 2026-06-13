@@ -10,17 +10,12 @@ import (
 
 	"strings"
 
-	"github.com/godbus/dbus"
 	"github.com/gsterjov/go-libsecret"
 )
 
-func init() {
-	// silently fail if dbus isn't available
-	_, err := dbus.SessionBus()
-	if err != nil {
-		return
-	}
+var newLibSecretService = libsecret.NewService
 
+func init() {
 	supportedBackends[SecretServiceBackend] = opener(func(cfg Config) (Keyring, error) {
 		if cfg.ServiceName == "" {
 			cfg.ServiceName = "secret-service"
@@ -29,7 +24,7 @@ func init() {
 			cfg.LibSecretCollectionName = cfg.ServiceName
 		}
 
-		service, err := libsecret.NewService()
+		service, err := newLibSecretService()
 		if err != nil {
 			return &secretsKeyring{}, err
 		}
