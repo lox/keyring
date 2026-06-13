@@ -267,6 +267,41 @@ func TestOSXKeychainSynchronizableModes(t *testing.T) {
 	}
 }
 
+func TestOSXKeychainNormalizesAccessDeniedErrors(t *testing.T) {
+	tests := []error{
+		errSecUserCanceled,
+		errSecInvalidOwnerEdit,
+		errSecMissingEntitlement,
+		gokeychain.ErrorAuthFailed,
+		gokeychain.ErrorInteractionNotAllowed,
+		gokeychain.ErrorNoAccessForItem,
+	}
+
+	for _, testErr := range tests {
+		err := normalizeKeychainError(testErr)
+		if !errors.Is(err, ErrAccessDenied) {
+			t.Fatalf("expected %v to wrap ErrAccessDenied, got %v", testErr, err)
+		}
+		if !errors.Is(err, testErr) {
+			t.Fatalf("expected %v to preserve platform error, got %v", testErr, err)
+		}
+	}
+}
+
+func TestOSXKeychainLeavesOtherErrorsUnchanged(t *testing.T) {
+	err := normalizeKeychainError(gokeychain.ErrorParam)
+	if errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("expected non-access error to stay unwrapped, got %v", err)
+	}
+	if !errors.Is(err, gokeychain.ErrorParam) {
+		t.Fatalf("expected platform error to be preserved, got %v", err)
+	}
+
+	if err := normalizeKeychainError(nil); err != nil {
+		t.Fatalf("expected nil to stay nil, got %v", err)
+	}
+}
+
 func TestOSXKeychainGetMetadataUsesConfiguredKeychain(t *testing.T) {
 	ring := newTestKeyring(t, "test-metadata")
 	item := Item{
