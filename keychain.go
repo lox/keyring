@@ -151,9 +151,6 @@ func (k *keychain) queryAccount(key string, prepare func(*gokeychain.Item)) ([]g
 		if len(results) == 0 {
 			continue
 		}
-		if firstErr != nil {
-			continue
-		}
 
 		return results, nil
 	}
@@ -294,6 +291,46 @@ func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, ac
 	return errKeychainUpdateItemNotFound
 }
 
+func (k *keychain) removeOtherSynchronizableItems(kc gokeychain.Keychain, account string, keepSynchronizable gokeychain.Synchronizable) error {
+	if !k.isSynchronizable {
+		return nil
+	}
+
+	var firstErr error
+	for _, synchronizable := range k.synchronizableQueryModes() {
+		if synchronizable == keepSynchronizable {
+			continue
+		}
+
+		item := k.newItem()
+		item.SetAccount(account)
+		setSynchronizable(&item, synchronizable)
+
+		if k.path != "" {
+			item.SetMatchSearchList(kc)
+		}
+
+		err := gokeychain.DeleteItem(item)
+		if err == nil || isKeychainNotFound(err) {
+			continue
+		}
+		if isMissingSynchronizableEntitlement(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		return err
+	}
+
+	if firstErr != nil {
+		return firstErr
+	}
+
+	return nil
+}
+
 func (k *keychain) Set(item Item) error {
 	var kc gokeychain.Keychain
 
@@ -356,7 +393,7 @@ func (k *keychain) Set(item Item) error {
 		return err
 	}
 
-	return nil
+	return k.removeOtherSynchronizableItems(kc, item.Key, synchronizable)
 }
 
 func (k *keychain) Remove(key string) error {

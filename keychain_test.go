@@ -188,15 +188,18 @@ func TestOSXKeychainRejectsSynchronizableCustomKeychain(t *testing.T) {
 	}
 }
 
-func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsDisallowed(t *testing.T) {
-	err := validateConfig(Config{
-		AllowedBackends:        []BackendType{FileBackend},
+func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenFileBackendIsPreferred(t *testing.T) {
+	ring, err := Open(Config{
+		AllowedBackends:        []BackendType{FileBackend, KeychainBackend},
 		ServiceName:            "test",
 		KeychainName:           tempKeychainName(t),
 		KeychainSynchronizable: true,
 	})
 	if err != nil {
-		t.Fatalf("expected config to be valid when keychain backend is disallowed, got %v", err)
+		t.Fatalf("expected file backend to open before keychain validation, got %v", err)
+	}
+	if _, ok := ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring, got %T", ring)
 	}
 }
 
@@ -210,14 +213,17 @@ func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsUnsupported(
 		supportedBackends[KeychainBackend] = keychainOpener
 	})
 
-	err := validateConfig(Config{
+	ring, err := Open(Config{
 		AllowedBackends:        []BackendType{KeychainBackend, FileBackend},
 		ServiceName:            "test",
 		KeychainName:           tempKeychainName(t),
 		KeychainSynchronizable: true,
 	})
 	if err != nil {
-		t.Fatalf("expected config to be valid when keychain backend is unsupported, got %v", err)
+		t.Fatalf("expected fallback backend to open when keychain backend is unsupported, got %v", err)
+	}
+	if _, ok := ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring, got %T", ring)
 	}
 }
 
