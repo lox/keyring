@@ -23,8 +23,8 @@ Several backend failure modes are currently hard for callers to handle:
 
 - macOS Keychain returns raw OSStatus errors for user cancellation, denied
   access, missing entitlements, and invalid owner edits.
-- Secret Service opens DBus/libsecret resources without a lifecycle hook for
-  callers that need to release them.
+- The Linux DBus-backed backends open DBus resources from package
+  initialization, even when callers use a different backend.
 - Secret Service empty-state and collection behavior has historically differed
   from other backends.
 - WinCred has reports of nil credentials and unclear value-size failures.
@@ -52,6 +52,9 @@ strings, ignore confusing failures, or avoid the backend entirely.
 
 ## Current state
 
+- Slice 1 landed in PR #7: macOS Keychain access-denied and user-cancelled
+  OSStatus values now wrap `ErrAccessDenied` while preserving the raw platform
+  error.
 - `github.com/dvsekhvalnov/jose2go` is already at `v1.8.0`, covering upstream
   PR #141.
 - `gopkg.in/yaml.v3` is already at `v3.0.1`, covering upstream PR #131.
@@ -71,9 +74,11 @@ strings, ignore confusing failures, or avoid the backend entirely.
    separate macOS follow-ups because they may require ACL or item-label changes.
 
 2. **Secret Service DBus lifecycle.**
-   Stop the Linux backend from leaking DBus/libsecret resources. Prefer lazy
-   backend probing plus an optional close path for callers that care about
-   lifecycle, while preserving the existing `Keyring` interface.
+   Stop the Linux DBus-backed backends from opening DBus/libsecret resources
+   from package initialization. Use lazy opener-time probing so importing
+   keyring or using a different backend does not autostart DBus. Do not add a
+   `Close` method for this slice: the current DBus calls use godbus' shared
+   `SessionBus`, whose own docs say callers must not close it.
 
 3. **Secret Service consistency pass.**
    Tighten empty-state, collection lookup, and default collection behavior so
@@ -101,8 +106,8 @@ strings, ignore confusing failures, or avoid the backend entirely.
   personal `go-keychain` fork and lacks a signed-app test strategy. It belongs
   in a separate design plan.
 - Adding a `Close` method to `Keyring` would be a breaking interface change. The
-  Secret Service lifecycle slice should start with an optional interface or
-  backend-specific cleanup path instead.
+  Secret Service lifecycle slice should avoid that by removing eager DBus access
+  first.
 - Backend-neutral sentinels need to wrap, not replace, platform errors so
   existing callers can keep matching raw errors.
 - Windows fixes should not be inferred from non-Windows behavior. The Windows CI

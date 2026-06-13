@@ -20,12 +20,6 @@ func init() {
 		return
 	}
 
-	// silently fail if dbus isn't available
-	_, err := dbus.SessionBus()
-	if err != nil {
-		return
-	}
-
 	supportedBackends[KWalletBackend] = opener(func(cfg Config) (Keyring, error) {
 		if cfg.ServiceName == "" {
 			cfg.ServiceName = "kdewallet"
@@ -39,7 +33,7 @@ func init() {
 			cfg.KWalletFolder = "keyring"
 		}
 
-		wallet, err := newKwallet()
+		wallet, err := newKwalletBinding()
 		if err != nil {
 			return nil, err
 		}
@@ -159,6 +153,8 @@ func (k *kwalletKeyring) Keys() ([]string, error) {
 
 	return entries, nil
 }
+
+var newKwalletBinding = newKwallet
 
 func newKwallet() (*kwalletBinding, error) {
 	conn, err := dbus.SessionBus()
