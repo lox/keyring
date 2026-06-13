@@ -54,6 +54,8 @@ func AvailableBackends() []BackendType {
 
 type opener func(cfg Config) (Keyring, error)
 
+var errKeychainSynchronizableWithCustomKeychain = errors.New("keychain synchronizable is not supported with custom keychains")
+
 // Open will open a specific keyring backend.
 func Open(cfg Config) (Keyring, error) {
 	if cfg.AllowedBackends == nil {
@@ -65,6 +67,9 @@ func Open(cfg Config) (Keyring, error) {
 			openBackend, err := opener(cfg)
 			if err != nil {
 				debugf("Failed backend %s: %s", backend, err)
+				if errors.Is(err, errKeychainSynchronizableWithCustomKeychain) {
+					return nil, err
+				}
 				continue
 			}
 			return openBackend, nil

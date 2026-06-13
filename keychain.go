@@ -10,6 +10,10 @@ import (
 	gokeychain "github.com/99designs/go-keychain"
 )
 
+const errSecMissingEntitlement gokeychain.Error = -34018
+
+var errKeychainUpdateItemNotFound = errors.New("keychain item not found")
+
 type keychain struct {
 	path    string
 	service string
@@ -23,9 +27,14 @@ type keychain struct {
 
 func init() {
 	supportedBackends[KeychainBackend] = opener(func(cfg Config) (Keyring, error) {
+		if cfg.KeychainName != "" && cfg.KeychainSynchronizable {
+			return nil, errKeychainSynchronizableWithCustomKeychain
+		}
+
 		kc := &keychain{
-			service:      cfg.ServiceName,
-			passwordFunc: cfg.KeychainPasswordFunc,
+			service:          cfg.ServiceName,
+			passwordFunc:     cfg.KeychainPasswordFunc,
+			isSynchronizable: cfg.KeychainSynchronizable,
 
 			// Set the isAccessibleWhenUnlocked to the boolean value of
 			// KeychainAccessibleWhenUnlocked is a shorthand for setting the accessibility value.
@@ -42,27 +51,132 @@ func init() {
 	})
 }
 
-func (k *keychain) Get(key string) (Item, error) {
-	query := gokeychain.NewItem()
-	query.SetSecClass(gokeychain.SecClassGenericPassword)
-	query.SetService(k.service)
+func (k *keychain) newItem() gokeychain.Item {
+	item := gokeychain.NewItem()
+	item.SetSecClass(gokeychain.SecClassGenericPassword)
+	item.SetService(k.service)
+	return item
+}
+
+func (k *keychain) newAccountQuery(key string, synchronizable gokeychain.Synchronizable) gokeychain.Item {
+	query := k.newItem()
 	query.SetAccount(key)
 	query.SetMatchLimit(gokeychain.MatchLimitOne)
-	query.SetReturnAttributes(true)
-	query.SetReturnData(true)
+	k.setMatchSearchList(&query)
+	setSynchronizable(&query, synchronizable)
+	return query
+}
 
-	if k.path != "" {
-		// When we are querying, we don't create by default
-		query.SetMatchSearchList(gokeychain.NewWithPath(k.path))
+func (k *keychain) setMatchSearchList(item *gokeychain.Item) {
+	if k.path == "" {
+		return
 	}
 
+	item.SetMatchSearchList(gokeychain.NewWithPath(k.path))
+}
+
+func setSynchronizable(item *gokeychain.Item, synchronizable gokeychain.Synchronizable) {
+	if synchronizable == gokeychain.SynchronizableDefault {
+		return
+	}
+
+	item.SetSynchronizable(synchronizable)
+}
+
+func (k *keychain) synchronizableItemMode(item Item) gokeychain.Synchronizable {
+	if !k.isSynchronizable {
+		return gokeychain.SynchronizableDefault
+	}
+	if item.KeychainNotSynchronizable {
+		return gokeychain.SynchronizableNo
+	}
+
+	return gokeychain.SynchronizableYes
+}
+
+func (k *keychain) synchronizableQueryModes() []gokeychain.Synchronizable {
+	if !k.isSynchronizable {
+		return []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}
+	}
+
+	return []gokeychain.Synchronizable{
+		gokeychain.SynchronizableYes,
+		gokeychain.SynchronizableNo,
+	}
+}
+
+func (k *keychain) updateSynchronizableModes(synchronizable gokeychain.Synchronizable) []gokeychain.Synchronizable {
+	if !k.isSynchronizable {
+		return []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}
+	}
+
+	modes := []gokeychain.Synchronizable{synchronizable}
+	for _, fallback := range k.synchronizableQueryModes() {
+		if fallback == synchronizable {
+			continue
+		}
+		modes = append(modes, fallback)
+	}
+
+	return modes
+}
+
+func isKeychainNotFound(err error) bool {
+	return err == gokeychain.ErrorItemNotFound || err == gokeychain.ErrorNoSuchKeychain
+}
+
+func isMissingSynchronizableEntitlement(err error) bool {
+	return errors.Is(err, errSecMissingEntitlement)
+}
+
+func (k *keychain) queryAccount(key string, prepare func(*gokeychain.Item)) ([]gokeychain.QueryResult, error) {
+	var firstErr error
+	for _, synchronizable := range k.synchronizableQueryModes() {
+		query := k.newAccountQuery(key, synchronizable)
+		prepare(&query)
+
+		results, err := gokeychain.QueryItem(query)
+		if isKeychainNotFound(err) {
+			continue
+		}
+		if k.isSynchronizable && isMissingSynchronizableEntitlement(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(results) == 0 {
+			continue
+		}
+
+		return results, nil
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return nil, ErrKeyNotFound
+}
+
+func (k *keychain) existingKeychain() (gokeychain.Keychain, error) {
+	kc := gokeychain.NewWithPath(k.path)
+	return kc, kc.Status()
+}
+
+func (k *keychain) Get(key string) (Item, error) {
 	debugf("Querying keychain for service=%q, account=%q, keychain=%q", k.service, key, k.path)
-	results, err := gokeychain.QueryItem(query)
-	if err == gokeychain.ErrorItemNotFound || len(results) == 0 {
+	results, err := k.queryAccount(key, func(query *gokeychain.Item) {
+		query.SetReturnAttributes(true)
+		query.SetReturnData(true)
+	})
+	if err == ErrKeyNotFound {
 		debugf("No results found")
 		return Item{}, ErrKeyNotFound
 	}
-
 	if err != nil {
 		debugf("Error: %#v", err)
 		return Item{}, err
@@ -80,21 +194,16 @@ func (k *keychain) Get(key string) (Item, error) {
 }
 
 func (k *keychain) GetMetadata(key string) (Metadata, error) {
-	query := gokeychain.NewItem()
-	query.SetSecClass(gokeychain.SecClassGenericPassword)
-	query.SetService(k.service)
-	query.SetAccount(key)
-	query.SetMatchLimit(gokeychain.MatchLimitOne)
-	query.SetReturnAttributes(true)
-	query.SetReturnData(false)
-	query.SetReturnRef(true)
-
 	debugf("Querying keychain for metadata of service=%q, account=%q, keychain=%q", k.service, key, k.path)
-	results, err := gokeychain.QueryItem(query)
-	if err == gokeychain.ErrorItemNotFound || len(results) == 0 {
+	results, err := k.queryAccount(key, func(query *gokeychain.Item) {
+		query.SetReturnAttributes(true)
+		query.SetReturnData(false)
+	})
+	if err == ErrKeyNotFound {
 		debugf("No results found")
 		return Metadata{}, ErrKeyNotFound
-	} else if err != nil {
+	}
+	if err != nil {
 		debugf("Error: %#v", err)
 		return Metadata{}, err
 	}
@@ -113,31 +222,110 @@ func (k *keychain) GetMetadata(key string) (Metadata, error) {
 	return md, nil
 }
 
-func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, account string) error {
-	queryItem := gokeychain.NewItem()
-	queryItem.SetSecClass(gokeychain.SecClassGenericPassword)
-	queryItem.SetService(k.service)
+func (k *keychain) newUpdateQuery(kc gokeychain.Keychain, account string, synchronizable gokeychain.Synchronizable) gokeychain.Item {
+	queryItem := k.newItem()
 	queryItem.SetAccount(account)
 	queryItem.SetMatchLimit(gokeychain.MatchLimitOne)
-	queryItem.SetReturnAttributes(true)
+	setSynchronizable(&queryItem, synchronizable)
 
 	if k.path != "" {
 		queryItem.SetMatchSearchList(kc)
 	}
 
+	return queryItem
+}
+
+func (k *keychain) updateItemInMode(kc gokeychain.Keychain, kcItem gokeychain.Item, account string, synchronizable gokeychain.Synchronizable) error {
+	queryItem := k.newUpdateQuery(kc, account, synchronizable)
+	queryItem.SetReturnAttributes(true)
+
 	results, err := gokeychain.QueryItem(queryItem)
+	if isKeychainNotFound(err) {
+		return errKeychainUpdateItemNotFound
+	}
 	if err != nil {
-		return fmt.Errorf("failed to query keychain: %v", err)
+		return fmt.Errorf("failed to query keychain: %w", err)
 	}
 	if len(results) == 0 {
-		return errors.New("no results")
+		return errKeychainUpdateItemNotFound
 	}
 
 	// Don't call SetAccess() as this will cause multiple prompts on update, even when we are not updating the AccessList
 	kcItem.SetAccess(nil)
 
-	if err := gokeychain.UpdateItem(queryItem, kcItem); err != nil {
-		return fmt.Errorf("failed to update item in keychain: %v", err)
+	updateQuery := k.newUpdateQuery(kc, account, synchronizable)
+	if err := gokeychain.UpdateItem(updateQuery, kcItem); err != nil {
+		return fmt.Errorf("failed to update item in keychain: %w", err)
+	}
+
+	return nil
+}
+
+func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, account string, synchronizable gokeychain.Synchronizable) error {
+	var firstErr error
+	for _, mode := range k.updateSynchronizableModes(synchronizable) {
+		err := k.updateItemInMode(kc, kcItem, account, mode)
+		if err == nil {
+			if firstErr != nil {
+				return firstErr
+			}
+			return nil
+		}
+		if errors.Is(err, errKeychainUpdateItemNotFound) {
+			continue
+		}
+		if k.isSynchronizable && isMissingSynchronizableEntitlement(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		return err
+	}
+
+	if firstErr != nil {
+		return firstErr
+	}
+
+	return errKeychainUpdateItemNotFound
+}
+
+func (k *keychain) removeOtherSynchronizableItems(kc gokeychain.Keychain, account string, keepSynchronizable gokeychain.Synchronizable) error {
+	if !k.isSynchronizable {
+		return nil
+	}
+
+	var firstErr error
+	for _, synchronizable := range k.synchronizableQueryModes() {
+		if synchronizable == keepSynchronizable {
+			continue
+		}
+
+		item := k.newItem()
+		item.SetAccount(account)
+		setSynchronizable(&item, synchronizable)
+
+		if k.path != "" {
+			item.SetMatchSearchList(kc)
+		}
+
+		err := gokeychain.DeleteItem(item)
+		if err == nil || isKeychainNotFound(err) {
+			continue
+		}
+		if isMissingSynchronizableEntitlement(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		return err
+	}
+
+	if firstErr != nil {
+		return firstErr
 	}
 
 	return nil
@@ -155,9 +343,7 @@ func (k *keychain) Set(item Item) error {
 		}
 	}
 
-	kcItem := gokeychain.NewItem()
-	kcItem.SetSecClass(gokeychain.SecClassGenericPassword)
-	kcItem.SetService(k.service)
+	kcItem := k.newItem()
 	kcItem.SetAccount(item.Key)
 	kcItem.SetLabel(item.Label)
 	kcItem.SetDescription(item.Description)
@@ -167,9 +353,9 @@ func (k *keychain) Set(item Item) error {
 		kcItem.UseKeychain(kc)
 	}
 
-	if k.isSynchronizable && !item.KeychainNotSynchronizable {
-		kcItem.SetSynchronizable(gokeychain.SynchronizableYes)
-	}
+	synchronizable := k.synchronizableItemMode(item)
+	usesSynchronizableAttr := synchronizable != gokeychain.SynchronizableDefault
+	setSynchronizable(&kcItem, synchronizable)
 
 	if k.isAccessibleWhenUnlocked {
 		kcItem.SetAccessible(gokeychain.AccessibleWhenUnlocked)
@@ -177,13 +363,16 @@ func (k *keychain) Set(item Item) error {
 
 	isTrusted := k.isTrusted && !item.KeychainNotTrustApplication
 
-	if isTrusted {
+	switch {
+	case usesSynchronizableAttr:
+		debugf("Keychain item has a synchronizable attribute and doesn't use legacy access ACLs")
+	case isTrusted:
 		debugf("Keychain item trusts keyring")
 		kcItem.SetAccess(&gokeychain.Access{
 			Label:               item.Label,
 			TrustedApplications: nil,
 		})
-	} else {
+	default:
 		debugf("Keychain item doesn't trust keyring")
 		kcItem.SetAccess(&gokeychain.Access{
 			Label:               item.Label,
@@ -197,74 +386,123 @@ func (k *keychain) Set(item Item) error {
 
 	if err == gokeychain.ErrorDuplicateItem {
 		debugf("Item already exists, updating")
-		err = k.updateItem(kc, kcItem, item.Key)
+		err = k.updateItem(kc, kcItem, item.Key, synchronizable)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	return nil
+	return k.removeOtherSynchronizableItems(kc, item.Key, synchronizable)
 }
 
 func (k *keychain) Remove(key string) error {
-	item := gokeychain.NewItem()
-	item.SetSecClass(gokeychain.SecClassGenericPassword)
-	item.SetService(k.service)
-	item.SetAccount(key)
+	var kc gokeychain.Keychain
 
 	if k.path != "" {
-		kc := gokeychain.NewWithPath(k.path)
-
-		if err := kc.Status(); err != nil {
+		var err error
+		kc, err = k.existingKeychain()
+		if err != nil {
 			if err == gokeychain.ErrorNoSuchKeychain {
 				return ErrKeyNotFound
 			}
 			return err
 		}
-
-		item.SetMatchSearchList(kc)
 	}
 
 	debugf("Removing keychain item service=%q, account=%q, keychain %q", k.service, key, k.path)
-	err := gokeychain.DeleteItem(item)
-	if err == gokeychain.ErrorItemNotFound {
-		return ErrKeyNotFound
+	removed := false
+	var firstErr error
+	for _, synchronizable := range k.synchronizableQueryModes() {
+		item := k.newItem()
+		item.SetAccount(key)
+		setSynchronizable(&item, synchronizable)
+
+		if k.path != "" {
+			item.SetMatchSearchList(kc)
+		}
+
+		err := gokeychain.DeleteItem(item)
+		if err == nil {
+			removed = true
+			continue
+		}
+		if isKeychainNotFound(err) {
+			continue
+		}
+		if k.isSynchronizable && isMissingSynchronizableEntitlement(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		return err
+	}
+	if firstErr != nil {
+		return firstErr
+	}
+	if removed {
+		return nil
 	}
 
-	return err
+	return ErrKeyNotFound
 }
 
 func (k *keychain) Keys() ([]string, error) {
-	query := gokeychain.NewItem()
-	query.SetSecClass(gokeychain.SecClassGenericPassword)
-	query.SetService(k.service)
-	query.SetMatchLimit(gokeychain.MatchLimitAll)
-	query.SetReturnAttributes(true)
+	var kc gokeychain.Keychain
 
 	if k.path != "" {
-		kc := gokeychain.NewWithPath(k.path)
-
-		if err := kc.Status(); err != nil {
+		var err error
+		kc, err = k.existingKeychain()
+		if err != nil {
 			if err == gokeychain.ErrorNoSuchKeychain {
 				return []string{}, nil
 			}
 			return nil, err
 		}
-
-		query.SetMatchSearchList(kc)
 	}
 
 	debugf("Querying keychain for service=%q, keychain=%q", k.service, k.path)
-	results, err := gokeychain.QueryItem(query)
-	if err != nil {
-		return nil, err
+	accountNames := []string{}
+	seen := map[string]struct{}{}
+	var firstErr error
+	for _, synchronizable := range k.synchronizableQueryModes() {
+		query := k.newItem()
+		query.SetMatchLimit(gokeychain.MatchLimitAll)
+		query.SetReturnAttributes(true)
+		setSynchronizable(&query, synchronizable)
+
+		if k.path != "" {
+			query.SetMatchSearchList(kc)
+		}
+
+		results, err := gokeychain.QueryItem(query)
+		if isKeychainNotFound(err) {
+			continue
+		}
+		if k.isSynchronizable && isMissingSynchronizableEntitlement(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		debugf("Found %d results", len(results))
+		for _, r := range results {
+			if _, ok := seen[r.Account]; ok {
+				continue
+			}
+			seen[r.Account] = struct{}{}
+			accountNames = append(accountNames, r.Account)
+		}
 	}
 
-	debugf("Found %d results", len(results))
-	accountNames := make([]string, len(results))
-	for idx, r := range results {
-		accountNames[idx] = r.Account
+	if firstErr != nil {
+		return nil, firstErr
 	}
 
 	return accountNames, nil

@@ -4,24 +4,17 @@
 package keyring
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
+
+	gokeychain "github.com/99designs/go-keychain"
 )
 
 func TestOSXKeychainKeyringSet(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
-
-	k := &keychain{
-		path:         path,
-		passwordFunc: FixedStringPrompt("test password"),
-		service:      "test",
-		isTrusted:    true,
-	}
+	k := newTestKeychain(t)
 
 	item := Item{
 		Key:         "llamas",
@@ -53,15 +46,7 @@ func TestOSXKeychainKeyringSet(t *testing.T) {
 }
 
 func TestOSXKeychainKeyringOverwrite(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
-
-	k := &keychain{
-		path:         path,
-		passwordFunc: FixedStringPrompt("test password"),
-		service:      "test",
-		isTrusted:    true,
-	}
+	k := newTestKeychain(t)
 
 	item1 := Item{
 		Key:         "llamas",
@@ -105,15 +90,7 @@ func TestOSXKeychainKeyringOverwrite(t *testing.T) {
 }
 
 func TestOSXKeychainKeyringListKeysWhenEmpty(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
-
-	k := &keychain{
-		path:         path,
-		service:      "test",
-		passwordFunc: FixedStringPrompt("test password"),
-		isTrusted:    true,
-	}
+	k := newTestKeychain(t)
 
 	keys, err := k.Keys()
 	if err != nil {
@@ -125,15 +102,7 @@ func TestOSXKeychainKeyringListKeysWhenEmpty(t *testing.T) {
 }
 
 func TestOSXKeychainKeyringListKeysWhenNotEmpty(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
-
-	k := &keychain{
-		path:         path,
-		service:      "test",
-		passwordFunc: FixedStringPrompt("test password"),
-		isTrusted:    true,
-	}
+	k := newTestKeychain(t)
 
 	keys := []string{"key1", "key2", "key3"}
 
@@ -158,30 +127,234 @@ func TestOSXKeychainKeyringListKeysWhenNotEmpty(t *testing.T) {
 	}
 }
 
-func deleteKeychain(t *testing.T, path string) {
-	t.Helper()
+func TestOSXKeychainConfigMapsOptions(t *testing.T) {
+	keychainName := tempKeychainName(t)
 
-	if _, err := os.Stat(path); os.IsExist(err) {
-		_ = os.Remove(path)
+	ring, err := Open(Config{
+		AllowedBackends:                []BackendType{KeychainBackend},
+		ServiceName:                    "test",
+		KeychainName:                   keychainName,
+		KeychainPasswordFunc:           FixedStringPrompt("test password"),
+		KeychainTrustApplication:       true,
+		KeychainAccessibleWhenUnlocked: true,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// Sierra introduced a -db suffix
-	dbPath := path + "-db"
-	if _, err := os.Stat(dbPath); os.IsExist(err) {
-		_ = os.Remove(dbPath)
+	k, ok := ring.(*keychain)
+	if !ok {
+		t.Fatalf("expected *keychain, got %T", ring)
+	}
+	if k.path != keychainName+".keychain" {
+		t.Fatalf("expected keychain path %q, got %q", keychainName+".keychain", k.path)
+	}
+	if !k.isTrusted {
+		t.Fatal("expected keychain to trust the application")
+	}
+	if !k.isAccessibleWhenUnlocked {
+		t.Fatal("expected keychain to be accessible when unlocked")
 	}
 }
 
-func TestOSXKeychainGetKeyWhenEmpty(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
+func TestOSXKeychainConfigMapsSynchronizable(t *testing.T) {
+	ring, err := Open(Config{
+		AllowedBackends:        []BackendType{KeychainBackend},
+		ServiceName:            "test",
+		KeychainSynchronizable: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	k := &keychain{
-		path:         path,
+	k, ok := ring.(*keychain)
+	if !ok {
+		t.Fatalf("expected *keychain, got %T", ring)
+	}
+	if !k.isSynchronizable {
+		t.Fatal("expected keychain to be synchronizable")
+	}
+}
+
+func TestOSXKeychainRejectsSynchronizableCustomKeychain(t *testing.T) {
+	_, err := Open(Config{
+		AllowedBackends:        []BackendType{KeychainBackend, FileBackend},
+		ServiceName:            "test",
+		KeychainName:           tempKeychainName(t),
+		KeychainSynchronizable: true,
+	})
+	if !errors.Is(err, errKeychainSynchronizableWithCustomKeychain) {
+		t.Fatalf("expected synchronizable custom keychain to be rejected, got %v", err)
+	}
+}
+
+func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenFileBackendIsPreferred(t *testing.T) {
+	ring, err := Open(Config{
+		AllowedBackends:        []BackendType{FileBackend, KeychainBackend},
+		ServiceName:            "test",
+		KeychainName:           tempKeychainName(t),
+		KeychainSynchronizable: true,
+	})
+	if err != nil {
+		t.Fatalf("expected file backend to open before keychain validation, got %v", err)
+	}
+	if _, ok := ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring, got %T", ring)
+	}
+}
+
+func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsUnsupported(t *testing.T) {
+	keychainOpener, ok := supportedBackends[KeychainBackend]
+	if !ok {
+		t.Skip("keychain backend is already unsupported")
+	}
+	delete(supportedBackends, KeychainBackend)
+	t.Cleanup(func() {
+		supportedBackends[KeychainBackend] = keychainOpener
+	})
+
+	ring, err := Open(Config{
+		AllowedBackends:        []BackendType{KeychainBackend, FileBackend},
+		ServiceName:            "test",
+		KeychainName:           tempKeychainName(t),
+		KeychainSynchronizable: true,
+	})
+	if err != nil {
+		t.Fatalf("expected fallback backend to open when keychain backend is unsupported, got %v", err)
+	}
+	if _, ok := ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring, got %T", ring)
+	}
+}
+
+func TestOSXKeychainSynchronizableModes(t *testing.T) {
+	k := &keychain{isSynchronizable: true}
+
+	if got := k.synchronizableItemMode(Item{}); got != gokeychain.SynchronizableYes {
+		t.Fatalf("expected synchronizable item mode, got %v", got)
+	}
+	if got := k.synchronizableItemMode(Item{KeychainNotSynchronizable: true}); got != gokeychain.SynchronizableNo {
+		t.Fatalf("expected non-synchronizable item mode, got %v", got)
+	}
+	if got := k.synchronizableQueryModes(); !reflect.DeepEqual(got, []gokeychain.Synchronizable{
+		gokeychain.SynchronizableYes,
+		gokeychain.SynchronizableNo,
+	}) {
+		t.Fatalf("expected synchronizable queries to include opt-out fallback, got %v", got)
+	}
+	if got := k.updateSynchronizableModes(gokeychain.SynchronizableYes); !reflect.DeepEqual(got, []gokeychain.Synchronizable{
+		gokeychain.SynchronizableYes,
+		gokeychain.SynchronizableNo,
+	}) {
+		t.Fatalf("expected synchronizable updates to try requested mode first, got %v", got)
+	}
+	if got := k.updateSynchronizableModes(gokeychain.SynchronizableNo); !reflect.DeepEqual(got, []gokeychain.Synchronizable{
+		gokeychain.SynchronizableNo,
+		gokeychain.SynchronizableYes,
+	}) {
+		t.Fatalf("expected opt-out updates to try requested mode first, got %v", got)
+	}
+
+	k.isSynchronizable = false
+	if got := k.synchronizableItemMode(Item{}); got != gokeychain.SynchronizableDefault {
+		t.Fatalf("expected default item mode, got %v", got)
+	}
+	if got := k.synchronizableQueryModes(); !reflect.DeepEqual(got, []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}) {
+		t.Fatalf("expected default query mode, got %v", got)
+	}
+	if got := k.updateSynchronizableModes(gokeychain.SynchronizableDefault); !reflect.DeepEqual(got, []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}) {
+		t.Fatalf("expected default update mode, got %v", got)
+	}
+}
+
+func TestOSXKeychainGetMetadataUsesConfiguredKeychain(t *testing.T) {
+	ring := newTestKeyring(t, "test-metadata")
+	item := Item{
+		Key:         "llamas",
+		Label:       "Metadata label",
+		Description: "Metadata description",
+		Data:        []byte("llamas are ok"),
+	}
+
+	if err := ring.Set(item); err != nil {
+		t.Fatal(err)
+	}
+
+	metadata, err := ring.GetMetadata(item.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Item == nil {
+		t.Fatal("expected item metadata")
+	}
+	if metadata.Key != item.Key {
+		t.Fatalf("Key stored was not the metadata retrieved: %q vs %q", metadata.Key, item.Key)
+	}
+	if metadata.Label != item.Label {
+		t.Fatalf("Label stored was not the metadata retrieved: %q vs %q", metadata.Label, item.Label)
+	}
+	if metadata.Description != item.Description {
+		t.Fatalf("Description stored was not the metadata retrieved: %q vs %q", metadata.Description, item.Description)
+	}
+	if len(metadata.Data) != 0 {
+		t.Fatalf("Expected metadata data to be empty, got %q", metadata.Data)
+	}
+	if metadata.ModificationTime.IsZero() {
+		t.Fatal("Expected metadata modification time to be set")
+	}
+}
+
+func newTestKeychain(t *testing.T) *keychain {
+	t.Helper()
+
+	return &keychain{
+		path:         tempKeychainName(t) + ".keychain",
 		passwordFunc: FixedStringPrompt("test password"),
 		service:      "test",
 		isTrusted:    true,
 	}
+}
+
+func newTestKeyring(t *testing.T, service string) Keyring {
+	t.Helper()
+
+	ring, err := Open(Config{
+		AllowedBackends:          []BackendType{KeychainBackend},
+		ServiceName:              service,
+		KeychainName:             tempKeychainName(t),
+		KeychainPasswordFunc:     FixedStringPrompt("test password"),
+		KeychainTrustApplication: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return ring
+}
+
+func tempKeychainName(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "keyring-test")
+	t.Cleanup(func() {
+		deleteKeychain(t, path+".keychain")
+	})
+
+	return path
+}
+
+func deleteKeychain(t *testing.T, path string) {
+	t.Helper()
+
+	for _, path := range []string{path, path + "-db"} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			t.Errorf("remove keychain %q: %v", path, err)
+		}
+	}
+}
+
+func TestOSXKeychainGetKeyWhenEmpty(t *testing.T) {
+	k := newTestKeychain(t)
 
 	_, err := k.Get("no-such-key")
 	if err != ErrKeyNotFound {
@@ -190,15 +363,7 @@ func TestOSXKeychainGetKeyWhenEmpty(t *testing.T) {
 }
 
 func TestOSXKeychainGetKeyWhenNotEmpty(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
-
-	k := &keychain{
-		path:         path,
-		passwordFunc: FixedStringPrompt("test password"),
-		service:      "test",
-		isTrusted:    true,
-	}
+	k := newTestKeychain(t)
 	item := Item{
 		Key:         "llamas",
 		Label:       "Arbitrary label",
@@ -220,15 +385,7 @@ func TestOSXKeychainGetKeyWhenNotEmpty(t *testing.T) {
 }
 
 func TestOSXKeychainRemoveKeyWhenEmpty(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
-
-	k := &keychain{
-		path:         path,
-		passwordFunc: FixedStringPrompt("test password"),
-		service:      "test",
-		isTrusted:    true,
-	}
+	k := newTestKeychain(t)
 
 	err := k.Remove("no-such-key")
 	if err != ErrKeyNotFound {
@@ -237,15 +394,7 @@ func TestOSXKeychainRemoveKeyWhenEmpty(t *testing.T) {
 }
 
 func TestOSXKeychainRemoveKeyWhenNotEmpty(t *testing.T) {
-	path := tempPath()
-	defer deleteKeychain(t, path)
-
-	k := &keychain{
-		path:         path,
-		passwordFunc: FixedStringPrompt("test password"),
-		service:      "test",
-		isTrusted:    true,
-	}
+	k := newTestKeychain(t)
 	item := Item{
 		Key:         "llamas",
 		Label:       "Arbitrary label",
@@ -266,9 +415,4 @@ func TestOSXKeychainRemoveKeyWhenNotEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-}
-
-func tempPath() string {
-	// TODO make filename configurable
-	return filepath.Join(os.TempDir(), fmt.Sprintf("keyring-test-%d.keychain", time.Now().UnixNano()))
 }
