@@ -1,7 +1,8 @@
 Keyring
 =======
-[![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg)](https://github.com/lox/keyring/actions/workflows/test.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/99designs/keyring.svg)](https://pkg.go.dev/github.com/99designs/keyring)
+[![Maintained fork](https://img.shields.io/badge/maintained%20fork-lox%2Fkeyring-007d9c)](https://github.com/lox/keyring)
+[![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/lox/keyring/actions/workflows/test.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/lox/keyring.svg)](https://pkg.go.dev/github.com/lox/keyring)
 
 Keyring provides a common interface to a range of secure credential storage services.
 
@@ -9,7 +10,7 @@ Keyring provides a common interface to a range of secure credential storage serv
 
 This repository is a permanent, maintained fork of [99designs/keyring](https://github.com/99designs/keyring). The upstream project appears to be abandoned; its [maintenance status has been asked about upstream](https://github.com/99designs/keyring/issues/138), but the project remains without active stewardship there.
 
-I originally authored Keyring at 99designs. I'm sad to see the upstream project left unmaintained, so I maintain this fork for ongoing fixes, dependency updates, and platform support. The Go module path intentionally remains `github.com/99designs/keyring` for compatibility with existing users.
+I originally authored Keyring at 99designs. I'm sad to see the upstream project left unmaintained, so I maintain this fork for ongoing fixes, dependency updates, and platform support. The Go module path for this fork is `github.com/lox/keyring`.
 
 This is not the only maintained continuation of the project. [ByteNess/keyring](https://github.com/ByteNess/keyring/) is also a maintained fork, with its own feature set and maintenance choices.
 
@@ -42,7 +43,7 @@ i, _ := ring.Get("foo")
 fmt.Printf("%s", i.Data)
 ```
 
-For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/99designs/keyring)
+For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/lox/keyring)
 
 
 ## Testing
