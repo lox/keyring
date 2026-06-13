@@ -23,11 +23,11 @@ const ringparent = "thread"
 func getRandomKeyringName(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	rand.Seed(time.Now().UnixNano())
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	buf := make([]byte, length)
 	for i := range buf {
-		buf[i] = charset[rand.Intn(len(charset))]
+		buf[i] = charset[rng.Intn(len(charset))]
 	}
 	return "keyctl_test_" + string(buf)
 }
