@@ -120,6 +120,11 @@ var ErrNoAvailImpl = errors.New("specified keyring backend not available")
 // ErrKeyNotFound is returned by Keyring Get when the item is not on the keyring.
 var ErrKeyNotFound = errors.New("specified item could not be found in the keyring")
 
+// ErrAccessDenied is returned when the backend denies access or the user
+// cancels an authentication prompt. Returned errors may also wrap the
+// backend-specific error so callers can inspect the underlying platform error.
+var ErrAccessDenied = errors.New("keyring access denied")
+
 // ErrMetadataNeedsCredentials is returned when Metadata is called against a
 // backend which requires credentials even to see metadata.
 var ErrMetadataNeedsCredentials = errors.New("keyring backend requires credentials for metadata access")

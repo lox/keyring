@@ -10,7 +10,11 @@ import (
 	gokeychain "github.com/99designs/go-keychain"
 )
 
-const errSecMissingEntitlement gokeychain.Error = -34018
+const (
+	errSecUserCanceled       gokeychain.Error = -128
+	errSecInvalidOwnerEdit   gokeychain.Error = -25244
+	errSecMissingEntitlement gokeychain.Error = -34018
+)
 
 var errKeychainUpdateItemNotFound = errors.New("keychain item not found")
 
@@ -129,6 +133,25 @@ func isMissingSynchronizableEntitlement(err error) bool {
 	return errors.Is(err, errSecMissingEntitlement)
 }
 
+func isKeychainAccessDenied(err error) bool {
+	return errors.Is(err, errSecUserCanceled) ||
+		errors.Is(err, errSecInvalidOwnerEdit) ||
+		errors.Is(err, errSecMissingEntitlement) ||
+		errors.Is(err, gokeychain.ErrorAuthFailed) ||
+		errors.Is(err, gokeychain.ErrorInteractionNotAllowed) ||
+		errors.Is(err, gokeychain.ErrorNoAccessForItem)
+}
+
+func normalizeKeychainError(err error) error {
+	if err == nil || errors.Is(err, ErrAccessDenied) {
+		return err
+	}
+	if isKeychainAccessDenied(err) {
+		return fmt.Errorf("%w: %w", ErrAccessDenied, err)
+	}
+	return err
+}
+
 func (k *keychain) queryAccount(key string, prepare func(*gokeychain.Item)) ([]gokeychain.QueryResult, error) {
 	var firstErr error
 	for _, synchronizable := range k.synchronizableQueryModes() {
@@ -146,7 +169,7 @@ func (k *keychain) queryAccount(key string, prepare func(*gokeychain.Item)) ([]g
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, normalizeKeychainError(err)
 		}
 		if len(results) == 0 {
 			continue
@@ -156,7 +179,7 @@ func (k *keychain) queryAccount(key string, prepare func(*gokeychain.Item)) ([]g
 	}
 
 	if firstErr != nil {
-		return nil, firstErr
+		return nil, normalizeKeychainError(firstErr)
 	}
 
 	return nil, ErrKeyNotFound
@@ -244,7 +267,7 @@ func (k *keychain) updateItemInMode(kc gokeychain.Keychain, kcItem gokeychain.It
 		return errKeychainUpdateItemNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("failed to query keychain: %w", err)
+		return fmt.Errorf("failed to query keychain: %w", normalizeKeychainError(err))
 	}
 	if len(results) == 0 {
 		return errKeychainUpdateItemNotFound
@@ -255,7 +278,7 @@ func (k *keychain) updateItemInMode(kc gokeychain.Keychain, kcItem gokeychain.It
 
 	updateQuery := k.newUpdateQuery(kc, account, synchronizable)
 	if err := gokeychain.UpdateItem(updateQuery, kcItem); err != nil {
-		return fmt.Errorf("failed to update item in keychain: %w", err)
+		return fmt.Errorf("failed to update item in keychain: %w", normalizeKeychainError(err))
 	}
 
 	return nil
@@ -285,7 +308,7 @@ func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, ac
 	}
 
 	if firstErr != nil {
-		return firstErr
+		return normalizeKeychainError(firstErr)
 	}
 
 	return errKeychainUpdateItemNotFound
@@ -321,11 +344,11 @@ func (k *keychain) removeOtherSynchronizableItems(kc gokeychain.Keychain, accoun
 			continue
 		}
 
-		return err
+		return normalizeKeychainError(err)
 	}
 
 	if firstErr != nil {
-		return firstErr
+		return normalizeKeychainError(firstErr)
 	}
 
 	return nil
@@ -390,7 +413,7 @@ func (k *keychain) Set(item Item) error {
 	}
 
 	if err != nil {
-		return err
+		return normalizeKeychainError(err)
 	}
 
 	return k.removeOtherSynchronizableItems(kc, item.Key, synchronizable)
@@ -406,7 +429,7 @@ func (k *keychain) Remove(key string) error {
 			if err == gokeychain.ErrorNoSuchKeychain {
 				return ErrKeyNotFound
 			}
-			return err
+			return normalizeKeychainError(err)
 		}
 	}
 
@@ -437,10 +460,10 @@ func (k *keychain) Remove(key string) error {
 			continue
 		}
 
-		return err
+		return normalizeKeychainError(err)
 	}
 	if firstErr != nil {
-		return firstErr
+		return normalizeKeychainError(firstErr)
 	}
 	if removed {
 		return nil
@@ -459,7 +482,7 @@ func (k *keychain) Keys() ([]string, error) {
 			if err == gokeychain.ErrorNoSuchKeychain {
 				return []string{}, nil
 			}
-			return nil, err
+			return nil, normalizeKeychainError(err)
 		}
 	}
 
@@ -488,7 +511,7 @@ func (k *keychain) Keys() ([]string, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, normalizeKeychainError(err)
 		}
 
 		debugf("Found %d results", len(results))
@@ -502,7 +525,7 @@ func (k *keychain) Keys() ([]string, error) {
 	}
 
 	if firstErr != nil {
-		return nil, firstErr
+		return nil, normalizeKeychainError(firstErr)
 	}
 
 	return accountNames, nil
@@ -521,12 +544,13 @@ func (k *keychain) createOrOpen() (gokeychain.Keychain, error) {
 	debugf("Keychain status returned error: %v", err)
 
 	if err != gokeychain.ErrorNoSuchKeychain {
-		return gokeychain.Keychain{}, err
+		return gokeychain.Keychain{}, normalizeKeychainError(err)
 	}
 
 	if k.passwordFunc == nil {
 		debugf("Creating keychain %s with prompt", k.path)
-		return gokeychain.NewKeychainWithPrompt(k.path)
+		kc, err := gokeychain.NewKeychainWithPrompt(k.path)
+		return kc, normalizeKeychainError(err)
 	}
 
 	passphrase, err := k.passwordFunc("Enter passphrase for keychain")
@@ -535,5 +559,6 @@ func (k *keychain) createOrOpen() (gokeychain.Keychain, error) {
 	}
 
 	debugf("Creating keychain %s with provided password", k.path)
-	return gokeychain.NewKeychain(k.path, passphrase)
+	kc, err = gokeychain.NewKeychain(k.path, passphrase)
+	return kc, normalizeKeychainError(err)
 }
