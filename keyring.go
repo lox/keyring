@@ -125,6 +125,10 @@ var ErrKeyNotFound = errors.New("specified item could not be found in the keyrin
 // backend-specific error so callers can inspect the underlying platform error.
 var ErrAccessDenied = errors.New("keyring access denied")
 
+// ErrCredentialTooLarge is returned when a backend cannot store the item's data
+// because it exceeds that backend's credential size limit.
+var ErrCredentialTooLarge = errors.New("credential data exceeds backend limit")
+
 // ErrMetadataNeedsCredentials is returned when Metadata is called against a
 // backend which requires credentials even to see metadata.
 var ErrMetadataNeedsCredentials = errors.New("keyring backend requires credentials for metadata access")
