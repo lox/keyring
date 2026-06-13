@@ -79,6 +79,9 @@ func Open(cfg Config) (Keyring, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if _, ok := supportedBackends[KeychainBackend]; !ok {
+		return nil
+	}
 	if cfg.KeychainName != "" && cfg.KeychainSynchronizable && configAllowsBackend(cfg, KeychainBackend) {
 		return errKeychainSynchronizableWithCustomKeychain
 	}

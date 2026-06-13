@@ -200,6 +200,27 @@ func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsDisallowed(t
 	}
 }
 
+func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsUnsupported(t *testing.T) {
+	keychainOpener, ok := supportedBackends[KeychainBackend]
+	if !ok {
+		t.Skip("keychain backend is already unsupported")
+	}
+	delete(supportedBackends, KeychainBackend)
+	t.Cleanup(func() {
+		supportedBackends[KeychainBackend] = keychainOpener
+	})
+
+	err := validateConfig(Config{
+		AllowedBackends:        []BackendType{KeychainBackend, FileBackend},
+		ServiceName:            "test",
+		KeychainName:           tempKeychainName(t),
+		KeychainSynchronizable: true,
+	})
+	if err != nil {
+		t.Fatalf("expected config to be valid when keychain backend is unsupported, got %v", err)
+	}
+}
+
 func TestOSXKeychainSynchronizableModes(t *testing.T) {
 	k := &keychain{isSynchronizable: true}
 
@@ -215,6 +236,18 @@ func TestOSXKeychainSynchronizableModes(t *testing.T) {
 	}) {
 		t.Fatalf("expected synchronizable queries to include opt-out fallback, got %v", got)
 	}
+	if got := k.updateSynchronizableModes(gokeychain.SynchronizableYes); !reflect.DeepEqual(got, []gokeychain.Synchronizable{
+		gokeychain.SynchronizableYes,
+		gokeychain.SynchronizableNo,
+	}) {
+		t.Fatalf("expected synchronizable updates to try requested mode first, got %v", got)
+	}
+	if got := k.updateSynchronizableModes(gokeychain.SynchronizableNo); !reflect.DeepEqual(got, []gokeychain.Synchronizable{
+		gokeychain.SynchronizableNo,
+		gokeychain.SynchronizableYes,
+	}) {
+		t.Fatalf("expected opt-out updates to try requested mode first, got %v", got)
+	}
 
 	k.isSynchronizable = false
 	if got := k.synchronizableItemMode(Item{}); got != gokeychain.SynchronizableDefault {
@@ -222,6 +255,9 @@ func TestOSXKeychainSynchronizableModes(t *testing.T) {
 	}
 	if got := k.synchronizableQueryModes(); !reflect.DeepEqual(got, []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}) {
 		t.Fatalf("expected default query mode, got %v", got)
+	}
+	if got := k.updateSynchronizableModes(gokeychain.SynchronizableDefault); !reflect.DeepEqual(got, []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}) {
+		t.Fatalf("expected default update mode, got %v", got)
 	}
 }
 

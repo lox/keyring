@@ -12,6 +12,8 @@ import (
 
 const errSecMissingEntitlement gokeychain.Error = -34018
 
+var errKeychainUpdateItemNotFound = errors.New("keychain item not found")
+
 type keychain struct {
 	path    string
 	service string
@@ -103,12 +105,28 @@ func (k *keychain) synchronizableQueryModes() []gokeychain.Synchronizable {
 	}
 }
 
+func (k *keychain) updateSynchronizableModes(synchronizable gokeychain.Synchronizable) []gokeychain.Synchronizable {
+	if !k.isSynchronizable {
+		return []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}
+	}
+
+	modes := []gokeychain.Synchronizable{synchronizable}
+	for _, fallback := range k.synchronizableQueryModes() {
+		if fallback == synchronizable {
+			continue
+		}
+		modes = append(modes, fallback)
+	}
+
+	return modes
+}
+
 func isKeychainNotFound(err error) bool {
 	return err == gokeychain.ErrorItemNotFound || err == gokeychain.ErrorNoSuchKeychain
 }
 
 func isMissingSynchronizableEntitlement(err error) bool {
-	return err == errSecMissingEntitlement
+	return errors.Is(err, errSecMissingEntitlement)
 }
 
 func (k *keychain) queryAccount(key string, prepare func(*gokeychain.Item)) ([]gokeychain.QueryResult, error) {
@@ -217,16 +235,19 @@ func (k *keychain) newUpdateQuery(kc gokeychain.Keychain, account string, synchr
 	return queryItem
 }
 
-func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, account string, synchronizable gokeychain.Synchronizable) error {
+func (k *keychain) updateItemInMode(kc gokeychain.Keychain, kcItem gokeychain.Item, account string, synchronizable gokeychain.Synchronizable) error {
 	queryItem := k.newUpdateQuery(kc, account, synchronizable)
 	queryItem.SetReturnAttributes(true)
 
 	results, err := gokeychain.QueryItem(queryItem)
+	if isKeychainNotFound(err) {
+		return errKeychainUpdateItemNotFound
+	}
 	if err != nil {
-		return fmt.Errorf("failed to query keychain: %v", err)
+		return fmt.Errorf("failed to query keychain: %w", err)
 	}
 	if len(results) == 0 {
-		return errors.New("no results")
+		return errKeychainUpdateItemNotFound
 	}
 
 	// Don't call SetAccess() as this will cause multiple prompts on update, even when we are not updating the AccessList
@@ -234,10 +255,37 @@ func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, ac
 
 	updateQuery := k.newUpdateQuery(kc, account, synchronizable)
 	if err := gokeychain.UpdateItem(updateQuery, kcItem); err != nil {
-		return fmt.Errorf("failed to update item in keychain: %v", err)
+		return fmt.Errorf("failed to update item in keychain: %w", err)
 	}
 
 	return nil
+}
+
+func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, account string, synchronizable gokeychain.Synchronizable) error {
+	var firstErr error
+	for _, mode := range k.updateSynchronizableModes(synchronizable) {
+		err := k.updateItemInMode(kc, kcItem, account, mode)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, errKeychainUpdateItemNotFound) {
+			continue
+		}
+		if k.isSynchronizable && isMissingSynchronizableEntitlement(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		return err
+	}
+
+	if firstErr != nil {
+		return firstErr
+	}
+
+	return errKeychainUpdateItemNotFound
 }
 
 func (k *keychain) Set(item Item) error {
@@ -264,9 +312,7 @@ func (k *keychain) Set(item Item) error {
 
 	synchronizable := k.synchronizableItemMode(item)
 	isSynchronizable := synchronizable == gokeychain.SynchronizableYes
-	if isSynchronizable {
-		kcItem.SetSynchronizable(gokeychain.SynchronizableYes)
-	}
+	setSynchronizable(&kcItem, synchronizable)
 
 	if k.isAccessibleWhenUnlocked {
 		kcItem.SetAccessible(gokeychain.AccessibleWhenUnlocked)
