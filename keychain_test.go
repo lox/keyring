@@ -133,7 +133,6 @@ func TestOSXKeychainConfigMapsOptions(t *testing.T) {
 		KeychainName:                   keychainName,
 		KeychainPasswordFunc:           FixedStringPrompt("test password"),
 		KeychainTrustApplication:       true,
-		KeychainSynchronizable:         true,
 		KeychainAccessibleWhenUnlocked: true,
 	})
 	if err != nil {
@@ -150,11 +149,39 @@ func TestOSXKeychainConfigMapsOptions(t *testing.T) {
 	if !k.isTrusted {
 		t.Fatal("expected keychain to trust the application")
 	}
+	if !k.isAccessibleWhenUnlocked {
+		t.Fatal("expected keychain to be accessible when unlocked")
+	}
+}
+
+func TestOSXKeychainConfigMapsSynchronizable(t *testing.T) {
+	ring, err := Open(Config{
+		AllowedBackends:        []BackendType{KeychainBackend},
+		ServiceName:            "test",
+		KeychainSynchronizable: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	k, ok := ring.(*keychain)
+	if !ok {
+		t.Fatalf("expected *keychain, got %T", ring)
+	}
 	if !k.isSynchronizable {
 		t.Fatal("expected keychain to be synchronizable")
 	}
-	if !k.isAccessibleWhenUnlocked {
-		t.Fatal("expected keychain to be accessible when unlocked")
+}
+
+func TestOSXKeychainRejectsSynchronizableCustomKeychain(t *testing.T) {
+	_, err := Open(Config{
+		AllowedBackends:        []BackendType{KeychainBackend},
+		ServiceName:            "test",
+		KeychainName:           tempKeychainName(t),
+		KeychainSynchronizable: true,
+	})
+	if err == nil {
+		t.Fatal("expected synchronizable custom keychain to be rejected")
 	}
 }
 

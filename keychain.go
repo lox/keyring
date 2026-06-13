@@ -23,6 +23,10 @@ type keychain struct {
 
 func init() {
 	supportedBackends[KeychainBackend] = opener(func(cfg Config) (Keyring, error) {
+		if cfg.KeychainName != "" && cfg.KeychainSynchronizable {
+			return nil, errors.New("keychain synchronizable is not supported with custom keychains")
+		}
+
 		kc := &keychain{
 			service:          cfg.ServiceName,
 			passwordFunc:     cfg.KeychainPasswordFunc,
@@ -72,7 +76,7 @@ func (k *keychain) setSynchronizableMatch(item *gokeychain.Item, isSynchronizabl
 		return
 	}
 
-	item.SetSynchronizable(gokeychain.SynchronizableAny)
+	item.SetSynchronizable(gokeychain.SynchronizableYes)
 }
 
 func (k *keychain) existingKeychain() (gokeychain.Keychain, error) {
