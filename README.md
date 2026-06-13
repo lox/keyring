@@ -3,7 +3,15 @@ Keyring
 [![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg)](https://github.com/lox/keyring/actions/workflows/test.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/99designs/keyring.svg)](https://pkg.go.dev/github.com/99designs/keyring)
 
-Keyring provides a common interface to a range of secure credential storage services. Originally developed as part of [AWS Vault](https://github.com/99designs/aws-vault), a command line tool for securely managing AWS access from developer workstations.
+Keyring provides a common interface to a range of secure credential storage services.
+
+## Maintained fork status
+
+This repository is a permanent, maintained fork of [99designs/keyring](https://github.com/99designs/keyring). The upstream project appears to be abandoned; its [maintenance status has been asked about upstream](https://github.com/99designs/keyring/issues/138), but the project remains without active stewardship there.
+
+I originally authored Keyring at 99designs. I'm sad to see the upstream project left unmaintained, so I maintain this fork for ongoing fixes, dependency updates, and platform support. The Go module path intentionally remains `github.com/99designs/keyring` for compatibility with existing users.
+
+This is not the only maintained continuation of the project. [ByteNess/keyring](https://github.com/ByteNess/keyring/) is also a maintained fork, with its own feature set and maintenance choices.
 
 Currently Keyring supports the following backends
  * [macOS Keychain](https://support.apple.com/en-au/guide/keychain-access/welcome/mac)
@@ -63,16 +71,13 @@ vagrant up
 
 ## Contributing
 
-Contributions to the keyring package are most welcome from engineers of all backgrounds and skill levels. In particular the addition of extra backends across popular operating systems would be appreciated.
-
-This project will adhere to the [Go Community Code of Conduct](https://golang.org/conduct) in the github provided discussion spaces, with the moderators being the 99designs engineering team.
+Contributions to this fork of the keyring package are most welcome from engineers of all backgrounds and skill levels. In particular the addition of extra backends across popular operating systems would be appreciated.
 
 To make a contribution:
 
-  * Fork the repository
+  * Fork this repository
   * Make your changes on the fork
   * Submit a pull request back to this repo with a clear description of the problem you're solving
   * Ensure your PR passes all current (and new) tests
-  * Ideally verify that [aws-vault](https://github.com/99designs/aws-vault) works with your changes (optional)
 
 ...and we'll do our best to get your work merged in
