@@ -151,6 +151,9 @@ func (k *keychain) queryAccount(key string, prepare func(*gokeychain.Item)) ([]g
 		if len(results) == 0 {
 			continue
 		}
+		if firstErr != nil {
+			continue
+		}
 
 		return results, nil
 	}
@@ -266,6 +269,9 @@ func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, ac
 	for _, mode := range k.updateSynchronizableModes(synchronizable) {
 		err := k.updateItemInMode(kc, kcItem, account, mode)
 		if err == nil {
+			if firstErr != nil {
+				return firstErr
+			}
 			return nil
 		}
 		if errors.Is(err, errKeychainUpdateItemNotFound) {
@@ -311,7 +317,7 @@ func (k *keychain) Set(item Item) error {
 	}
 
 	synchronizable := k.synchronizableItemMode(item)
-	isSynchronizable := synchronizable == gokeychain.SynchronizableYes
+	usesSynchronizableAttr := synchronizable != gokeychain.SynchronizableDefault
 	setSynchronizable(&kcItem, synchronizable)
 
 	if k.isAccessibleWhenUnlocked {
@@ -321,8 +327,8 @@ func (k *keychain) Set(item Item) error {
 	isTrusted := k.isTrusted && !item.KeychainNotTrustApplication
 
 	switch {
-	case isSynchronizable:
-		debugf("Keychain item is synchronizable and doesn't use legacy access ACLs")
+	case usesSynchronizableAttr:
+		debugf("Keychain item has a synchronizable attribute and doesn't use legacy access ACLs")
 	case isTrusted:
 		debugf("Keychain item trusts keyring")
 		kcItem.SetAccess(&gokeychain.Access{
@@ -396,11 +402,11 @@ func (k *keychain) Remove(key string) error {
 
 		return err
 	}
-	if removed {
-		return nil
-	}
 	if firstErr != nil {
 		return firstErr
+	}
+	if removed {
+		return nil
 	}
 
 	return ErrKeyNotFound
@@ -458,7 +464,7 @@ func (k *keychain) Keys() ([]string, error) {
 		}
 	}
 
-	if len(accountNames) == 0 && firstErr != nil {
+	if firstErr != nil {
 		return nil, firstErr
 	}
 
