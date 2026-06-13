@@ -1,17 +1,15 @@
+version: "2"
+
 linters:
   enable:
     - bodyclose
     - contextcheck
-    - depguard
     - durationcheck
     - dupl
     - errchkjson
     - errname
     - exhaustive
-    - exportloopref
     - gocritic
-    - gofmt
-    - goimports
     - makezero
     - misspell
     - nakedret
@@ -27,3 +25,8 @@ linters:
     - unparam
     # - wastedassign
     - whitespace
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

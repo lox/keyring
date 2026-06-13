@@ -1,21 +1,36 @@
 name: Continuous Integration
-on: push
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version:
+          - "1.25.x"
+          - "1.26.x"
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    name: ${{ matrix.os }} / Go ${{ matrix.go-version }}
+    runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version: 1.19
-      - run: sudo apt-get install pass gnome-keyring dbus-x11
-      - uses: actions/checkout@v2
-      - run: go test -race ./...
-  mac:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/setup-go@v2
-        with:
-          go-version: 1.19
-      - run: brew install pass gnupg
-      - uses: actions/checkout@v2
+          go-version: ${{ matrix.go-version }}
+          cache: true
+      - name: Install Linux integration dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pass gnome-keyring dbus-x11
+      - name: Install macOS integration dependencies
+        if: runner.os == 'macOS'
+        run: brew install pass gnupg
       - run: go test -race ./...
