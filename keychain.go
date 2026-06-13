@@ -24,8 +24,9 @@ type keychain struct {
 func init() {
 	supportedBackends[KeychainBackend] = opener(func(cfg Config) (Keyring, error) {
 		kc := &keychain{
-			service:      cfg.ServiceName,
-			passwordFunc: cfg.KeychainPasswordFunc,
+			service:          cfg.ServiceName,
+			passwordFunc:     cfg.KeychainPasswordFunc,
+			isSynchronizable: cfg.KeychainSynchronizable,
 
 			// Set the isAccessibleWhenUnlocked to the boolean value of
 			// KeychainAccessibleWhenUnlocked is a shorthand for setting the accessibility value.
@@ -42,23 +43,42 @@ func init() {
 	})
 }
 
-func (k *keychain) Get(key string) (Item, error) {
-	query := gokeychain.NewItem()
-	query.SetSecClass(gokeychain.SecClassGenericPassword)
-	query.SetService(k.service)
+func (k *keychain) newItem() gokeychain.Item {
+	item := gokeychain.NewItem()
+	item.SetSecClass(gokeychain.SecClassGenericPassword)
+	item.SetService(k.service)
+	return item
+}
+
+func (k *keychain) newAccountQuery(key string) gokeychain.Item {
+	query := k.newItem()
 	query.SetAccount(key)
 	query.SetMatchLimit(gokeychain.MatchLimitOne)
+	k.setMatchSearchList(&query)
+	return query
+}
+
+func (k *keychain) setMatchSearchList(item *gokeychain.Item) {
+	if k.path == "" {
+		return
+	}
+
+	item.SetMatchSearchList(gokeychain.NewWithPath(k.path))
+}
+
+func (k *keychain) existingKeychain() (gokeychain.Keychain, error) {
+	kc := gokeychain.NewWithPath(k.path)
+	return kc, kc.Status()
+}
+
+func (k *keychain) Get(key string) (Item, error) {
+	query := k.newAccountQuery(key)
 	query.SetReturnAttributes(true)
 	query.SetReturnData(true)
 
-	if k.path != "" {
-		// When we are querying, we don't create by default
-		query.SetMatchSearchList(gokeychain.NewWithPath(k.path))
-	}
-
 	debugf("Querying keychain for service=%q, account=%q, keychain=%q", k.service, key, k.path)
 	results, err := gokeychain.QueryItem(query)
-	if err == gokeychain.ErrorItemNotFound || len(results) == 0 {
+	if err == gokeychain.ErrorItemNotFound || err == gokeychain.ErrorNoSuchKeychain {
 		debugf("No results found")
 		return Item{}, ErrKeyNotFound
 	}
@@ -66,6 +86,10 @@ func (k *keychain) Get(key string) (Item, error) {
 	if err != nil {
 		debugf("Error: %#v", err)
 		return Item{}, err
+	}
+	if len(results) == 0 {
+		debugf("No results found")
+		return Item{}, ErrKeyNotFound
 	}
 
 	item := Item{
@@ -80,23 +104,23 @@ func (k *keychain) Get(key string) (Item, error) {
 }
 
 func (k *keychain) GetMetadata(key string) (Metadata, error) {
-	query := gokeychain.NewItem()
-	query.SetSecClass(gokeychain.SecClassGenericPassword)
-	query.SetService(k.service)
-	query.SetAccount(key)
-	query.SetMatchLimit(gokeychain.MatchLimitOne)
+	query := k.newAccountQuery(key)
 	query.SetReturnAttributes(true)
 	query.SetReturnData(false)
-	query.SetReturnRef(true)
 
 	debugf("Querying keychain for metadata of service=%q, account=%q, keychain=%q", k.service, key, k.path)
 	results, err := gokeychain.QueryItem(query)
-	if err == gokeychain.ErrorItemNotFound || len(results) == 0 {
+	if err == gokeychain.ErrorItemNotFound || err == gokeychain.ErrorNoSuchKeychain {
 		debugf("No results found")
 		return Metadata{}, ErrKeyNotFound
-	} else if err != nil {
+	}
+	if err != nil {
 		debugf("Error: %#v", err)
 		return Metadata{}, err
+	}
+	if len(results) == 0 {
+		debugf("No results found")
+		return Metadata{}, ErrKeyNotFound
 	}
 
 	md := Metadata{
@@ -114,9 +138,7 @@ func (k *keychain) GetMetadata(key string) (Metadata, error) {
 }
 
 func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, account string) error {
-	queryItem := gokeychain.NewItem()
-	queryItem.SetSecClass(gokeychain.SecClassGenericPassword)
-	queryItem.SetService(k.service)
+	queryItem := k.newItem()
 	queryItem.SetAccount(account)
 	queryItem.SetMatchLimit(gokeychain.MatchLimitOne)
 	queryItem.SetReturnAttributes(true)
@@ -155,9 +177,7 @@ func (k *keychain) Set(item Item) error {
 		}
 	}
 
-	kcItem := gokeychain.NewItem()
-	kcItem.SetSecClass(gokeychain.SecClassGenericPassword)
-	kcItem.SetService(k.service)
+	kcItem := k.newItem()
 	kcItem.SetAccount(item.Key)
 	kcItem.SetLabel(item.Label)
 	kcItem.SetDescription(item.Description)
@@ -208,15 +228,12 @@ func (k *keychain) Set(item Item) error {
 }
 
 func (k *keychain) Remove(key string) error {
-	item := gokeychain.NewItem()
-	item.SetSecClass(gokeychain.SecClassGenericPassword)
-	item.SetService(k.service)
+	item := k.newItem()
 	item.SetAccount(key)
 
 	if k.path != "" {
-		kc := gokeychain.NewWithPath(k.path)
-
-		if err := kc.Status(); err != nil {
+		kc, err := k.existingKeychain()
+		if err != nil {
 			if err == gokeychain.ErrorNoSuchKeychain {
 				return ErrKeyNotFound
 			}
@@ -236,16 +253,13 @@ func (k *keychain) Remove(key string) error {
 }
 
 func (k *keychain) Keys() ([]string, error) {
-	query := gokeychain.NewItem()
-	query.SetSecClass(gokeychain.SecClassGenericPassword)
-	query.SetService(k.service)
+	query := k.newItem()
 	query.SetMatchLimit(gokeychain.MatchLimitAll)
 	query.SetReturnAttributes(true)
 
 	if k.path != "" {
-		kc := gokeychain.NewWithPath(k.path)
-
-		if err := kc.Status(); err != nil {
+		kc, err := k.existingKeychain()
+		if err != nil {
 			if err == gokeychain.ErrorNoSuchKeychain {
 				return []string{}, nil
 			}
