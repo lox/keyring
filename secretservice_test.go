@@ -24,7 +24,7 @@ import (
 //  2. It might be possible to make a mock prompter that connects to DBus
 //     and provides the Prompt interface using the go-libsecret library.
 
-func libSecretSetup(t *testing.T) (Keyring, func(t *testing.T)) {
+func libSecretSetup(t *testing.T) (backendKeyring, func(t *testing.T)) {
 	t.Helper()
 	if os.Getenv("GITHUB_ACTIONS") != "" {
 		t.Skip("Skipping testing in CI environment")
