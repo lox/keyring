@@ -3,6 +3,7 @@ package keyring
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"time"
 )
@@ -42,9 +43,20 @@ var supportedBackends = map[BackendType]opener{}
 
 // AvailableBackends provides a slice of all available backend keys on the current OS.
 func AvailableBackends() []BackendType {
+	return AvailableBackendsWithProviders()
+}
+
+// AvailableBackendsWithProviders provides a slice of available backend keys,
+// including the supplied external providers. Invalid providers are ignored.
+func AvailableBackendsWithProviders(providers ...Provider) []BackendType {
+	backends, order := backendRegistry(validProviders(providers))
+	return availableBackends(backends, order)
+}
+
+func availableBackends(backends map[BackendType]opener, order []BackendType) []BackendType {
 	b := []BackendType{}
-	for _, k := range backendOrder {
-		_, ok := supportedBackends[k]
+	for _, k := range order {
+		_, ok := backends[k]
 		if ok {
 			b = append(b, k)
 		}
@@ -52,18 +64,45 @@ func AvailableBackends() []BackendType {
 	return b
 }
 
-type opener func(cfg Config) (Keyring, error)
+// Opener opens a concrete keyring backend.
+type Opener func(cfg Config) (Keyring, error)
+
+type opener = Opener
+
+// Provider describes a backend implementation that can be supplied by callers.
+//
+// Providers passed to OpenWithProviders are local to that call. If a provider
+// uses the same Backend as a built-in backend, it replaces the built-in opener
+// for that call.
+type Provider struct {
+	Backend BackendType
+	Open    Opener
+}
 
 var errKeychainSynchronizableWithCustomKeychain = errors.New("keychain synchronizable is not supported with custom keychains")
 
 // Open will open a specific keyring backend.
 func Open(cfg Config) (Keyring, error) {
+	return OpenWithProviders(cfg)
+}
+
+// OpenWithProviders opens a keyring backend using the built-in backends plus
+// any caller-supplied providers.
+//
+// Providers are tried according to Config.AllowedBackends. When AllowedBackends
+// is nil, built-in backends retain their normal order and new external backends
+// are tried after the built-ins.
+func OpenWithProviders(cfg Config, providers ...Provider) (Keyring, error) {
+	backends, order, err := backendRegistryForOpen(providers)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.AllowedBackends == nil {
-		cfg.AllowedBackends = AvailableBackends()
+		cfg.AllowedBackends = availableBackends(backends, order)
 	}
 	debugf("Considering backends: %v", cfg.AllowedBackends)
 	for _, backend := range cfg.AllowedBackends {
-		if opener, ok := supportedBackends[backend]; ok {
+		if opener, ok := backends[backend]; ok {
 			openBackend, err := opener(cfg)
 			if err != nil {
 				debugf("Failed backend %s: %s", backend, err)
@@ -76,6 +115,52 @@ func Open(cfg Config) (Keyring, error) {
 		}
 	}
 	return nil, ErrNoAvailImpl
+}
+
+func backendRegistryForOpen(providers []Provider) (map[BackendType]opener, []BackendType, error) {
+	for _, provider := range providers {
+		if provider.Backend == InvalidBackend {
+			return nil, nil, fmt.Errorf("invalid keyring provider: backend is empty")
+		}
+		if provider.Open == nil {
+			return nil, nil, fmt.Errorf("invalid keyring provider %q: opener is nil", provider.Backend)
+		}
+	}
+
+	backends, order := backendRegistry(providers)
+	return backends, order, nil
+}
+
+func validProviders(providers []Provider) []Provider {
+	valid := make([]Provider, 0, len(providers))
+	for _, provider := range providers {
+		if provider.Backend == InvalidBackend || provider.Open == nil {
+			continue
+		}
+		valid = append(valid, provider)
+	}
+	return valid
+}
+
+func backendRegistry(providers []Provider) (map[BackendType]opener, []BackendType) {
+	backends := make(map[BackendType]opener, len(supportedBackends)+len(providers))
+	order := make([]BackendType, 0, len(backendOrder)+len(providers))
+
+	for _, backend := range backendOrder {
+		if opener, ok := supportedBackends[backend]; ok {
+			backends[backend] = opener
+			order = append(order, backend)
+		}
+	}
+
+	for _, provider := range providers {
+		if _, ok := backends[provider.Backend]; !ok {
+			order = append(order, provider.Backend)
+		}
+		backends[provider.Backend] = provider.Open
+	}
+
+	return backends, order
 }
 
 // Item is a thing stored on the keyring.

@@ -36,6 +36,49 @@ fmt.Printf("%s", i.Data)
 
 For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/99designs/keyring)
 
+## v2 API
+
+The `v2` package contains the next API shape. It keeps the built-in desktop
+backends in this repository while making backend selection extensible through
+explicit provider values and OptionFunc configuration.
+
+```go
+ctx := context.Background()
+
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithBackends(keyring.KeychainBackend, keyring.FileBackend),
+	keyring.WithProvider(keyring.FileProvider(
+		keyring.FileDir("/path/to/keyring"),
+		keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+	)),
+)
+if err != nil {
+	log.Fatal(err)
+}
+
+_ = ring.Set(ctx, keyring.Item{
+	Key:  "foo",
+	Data: []byte("secret-bar"),
+})
+```
+
+External providers, such as a future 1Password provider, can live in separate
+modules without adding their dependencies to the core package:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithBackends(onepassword.Backend, keyring.KeychainBackend, keyring.FileBackend),
+	keyring.WithProvider(onepassword.Provider(
+		onepassword.WithVault("Private"),
+	)),
+)
+```
+
+See [docs/v2-api.md](docs/v2-api.md) and the examples in the `v2` package for
+more detail.
+
 
 ## Testing
 
