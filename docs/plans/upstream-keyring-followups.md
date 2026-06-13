@@ -57,6 +57,9 @@ strings, ignore confusing failures, or avoid the backend entirely.
   error.
 - Slice 2 landed in PR #8: Linux DBus-backed backends no longer probe DBus from
   package initialization.
+- Slice 3 landed in PR #9: Secret Service missing-item removes now return
+  `ErrKeyNotFound`, and collection-name configuration is documented more
+  precisely.
 - `github.com/dvsekhvalnov/jose2go` is already at `v1.8.0`, covering upstream
   PR #141.
 - `gopkg.in/yaml.v3` is already at `v3.0.1`, covering upstream PR #131.
@@ -91,8 +94,8 @@ strings, ignore confusing failures, or avoid the backend entirely.
 
 4. **WinCred correctness pass.**
    Harden nil credential handling, key listing, and oversized credential errors
-   on Windows. Add tests that can run in the Windows CI matrix or isolate pure
-   behavior behind a small helper.
+   on Windows. Add tests that run in the Windows CI matrix and isolate pure
+   behavior behind small helpers.
 
 ## Verification
 

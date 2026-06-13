@@ -4,14 +4,22 @@
 package keyring
 
 import (
+	"errors"
+	"fmt"
+	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/danieljoos/wincred"
 )
 
-// ERROR_NOT_FOUND from https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
-const errElementNotFound = syscall.Errno(1168)
+// CRED_MAX_CREDENTIAL_BLOB_SIZE for generic credentials.
+const maxWinCredCredentialBlobSize = 5 * 512
+
+var (
+	getWinCredGenericCredential = wincred.GetGenericCredential
+	listWinCredCredentials      = wincred.FilteredList
+	newWinCredGenericCredential = wincred.NewGenericCredential
+)
 
 type windowsKeyring struct {
 	name   string
@@ -38,20 +46,26 @@ func init() {
 }
 
 func (k *windowsKeyring) Get(key string) (Item, error) {
-	cred, err := wincred.GetGenericCredential(k.credentialName(key))
+	cred, err := getWinCredGenericCredential(k.credentialName(key))
 	if err != nil {
-		if err == errElementNotFound {
+		if errors.Is(err, wincred.ErrElementNotFound) {
 			return Item{}, ErrKeyNotFound
 		}
 		return Item{}, err
 	}
 
-	item := Item{
-		Key:  key,
-		Data: cred.CredentialBlob,
+	return itemFromWinCred(key, cred)
+}
+
+func itemFromWinCred(key string, cred *wincred.GenericCredential) (Item, error) {
+	if cred == nil {
+		return Item{}, ErrKeyNotFound
 	}
 
-	return item, nil
+	return Item{
+		Key:  key,
+		Data: cred.CredentialBlob,
+	}, nil
 }
 
 // GetMetadata for pass returns an error indicating that it's unsupported
@@ -62,33 +76,46 @@ func (k *windowsKeyring) GetMetadata(_ string) (Metadata, error) {
 }
 
 func (k *windowsKeyring) Set(item Item) error {
-	cred := wincred.NewGenericCredential(k.credentialName(item.Key))
+	if len(item.Data) > maxWinCredCredentialBlobSize {
+		return fmt.Errorf("%w: wincred supports at most %d bytes", ErrCredentialTooLarge, maxWinCredCredentialBlobSize)
+	}
+
+	cred := newWinCredGenericCredential(k.credentialName(item.Key))
 	cred.CredentialBlob = item.Data
 	return cred.Write()
 }
 
 func (k *windowsKeyring) Remove(key string) error {
-	cred, err := wincred.GetGenericCredential(k.credentialName(key))
+	cred, err := getWinCredGenericCredential(k.credentialName(key))
 	if err != nil {
-		if err == errElementNotFound {
+		if errors.Is(err, wincred.ErrElementNotFound) {
 			return ErrKeyNotFound
 		}
 		return err
+	}
+	if cred == nil {
+		return ErrKeyNotFound
 	}
 	return cred.Delete()
 }
 
 func (k *windowsKeyring) Keys() ([]string, error) {
-	results := []string{}
+	prefix := k.credentialName("")
+	creds, err := listWinCredCredentials(prefix + "*")
+	if err != nil {
+		return nil, err
+	}
 
-	if creds, err := wincred.List(); err == nil {
-		for _, cred := range creds {
-			prefix := k.credentialName("")
-			if strings.HasPrefix(cred.TargetName, prefix) {
-				results = append(results, strings.TrimPrefix(cred.TargetName, prefix))
-			}
+	results := []string{}
+	for _, cred := range creds {
+		if cred == nil {
+			continue
+		}
+		if strings.HasPrefix(cred.TargetName, prefix) {
+			results = append(results, strings.TrimPrefix(cred.TargetName, prefix))
 		}
 	}
+	sort.Strings(results)
 
 	return results, nil
 }
