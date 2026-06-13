@@ -54,10 +54,15 @@ func AvailableBackends() []BackendType {
 
 type opener func(cfg Config) (Keyring, error)
 
+var errKeychainSynchronizableWithCustomKeychain = errors.New("keychain synchronizable is not supported with custom keychains")
+
 // Open will open a specific keyring backend.
 func Open(cfg Config) (Keyring, error) {
 	if cfg.AllowedBackends == nil {
 		cfg.AllowedBackends = AvailableBackends()
+	}
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 	debugf("Considering backends: %v", cfg.AllowedBackends)
 	for _, backend := range cfg.AllowedBackends {
@@ -71,6 +76,24 @@ func Open(cfg Config) (Keyring, error) {
 		}
 	}
 	return nil, ErrNoAvailImpl
+}
+
+func validateConfig(cfg Config) error {
+	if cfg.KeychainName != "" && cfg.KeychainSynchronizable && configAllowsBackend(cfg, KeychainBackend) {
+		return errKeychainSynchronizableWithCustomKeychain
+	}
+
+	return nil
+}
+
+func configAllowsBackend(cfg Config, backend BackendType) bool {
+	for _, allowedBackend := range cfg.AllowedBackends {
+		if allowedBackend == backend {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Item is a thing stored on the keyring.

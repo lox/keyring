@@ -4,10 +4,13 @@
 package keyring
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	gokeychain "github.com/99designs/go-keychain"
 )
 
 func TestOSXKeychainKeyringSet(t *testing.T) {
@@ -175,13 +178,50 @@ func TestOSXKeychainConfigMapsSynchronizable(t *testing.T) {
 
 func TestOSXKeychainRejectsSynchronizableCustomKeychain(t *testing.T) {
 	_, err := Open(Config{
-		AllowedBackends:        []BackendType{KeychainBackend},
+		AllowedBackends:        []BackendType{KeychainBackend, FileBackend},
 		ServiceName:            "test",
 		KeychainName:           tempKeychainName(t),
 		KeychainSynchronizable: true,
 	})
-	if err == nil {
-		t.Fatal("expected synchronizable custom keychain to be rejected")
+	if !errors.Is(err, errKeychainSynchronizableWithCustomKeychain) {
+		t.Fatalf("expected synchronizable custom keychain to be rejected, got %v", err)
+	}
+}
+
+func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsDisallowed(t *testing.T) {
+	err := validateConfig(Config{
+		AllowedBackends:        []BackendType{FileBackend},
+		ServiceName:            "test",
+		KeychainName:           tempKeychainName(t),
+		KeychainSynchronizable: true,
+	})
+	if err != nil {
+		t.Fatalf("expected config to be valid when keychain backend is disallowed, got %v", err)
+	}
+}
+
+func TestOSXKeychainSynchronizableModes(t *testing.T) {
+	k := &keychain{isSynchronizable: true}
+
+	if got := k.synchronizableItemMode(Item{}); got != gokeychain.SynchronizableYes {
+		t.Fatalf("expected synchronizable item mode, got %v", got)
+	}
+	if got := k.synchronizableItemMode(Item{KeychainNotSynchronizable: true}); got != gokeychain.SynchronizableNo {
+		t.Fatalf("expected non-synchronizable item mode, got %v", got)
+	}
+	if got := k.synchronizableQueryModes(); !reflect.DeepEqual(got, []gokeychain.Synchronizable{
+		gokeychain.SynchronizableYes,
+		gokeychain.SynchronizableNo,
+	}) {
+		t.Fatalf("expected synchronizable queries to include opt-out fallback, got %v", got)
+	}
+
+	k.isSynchronizable = false
+	if got := k.synchronizableItemMode(Item{}); got != gokeychain.SynchronizableDefault {
+		t.Fatalf("expected default item mode, got %v", got)
+	}
+	if got := k.synchronizableQueryModes(); !reflect.DeepEqual(got, []gokeychain.Synchronizable{gokeychain.SynchronizableDefault}) {
+		t.Fatalf("expected default query mode, got %v", got)
 	}
 }
 
