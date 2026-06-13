@@ -41,7 +41,9 @@ type Config struct {
 	// KWalletFolder is the folder for KWallet
 	KWalletFolder string
 
-	// LibSecretCollectionName is the name collection in secret-service
+	// LibSecretCollectionName is the collection name in secret-service. If empty,
+	// ServiceName is used. This is the collection path name, which may differ from
+	// the display label shown by Secret Service UI tools.
 	LibSecretCollectionName string
 
 	// PassDir is the pass password-store directory, ~/ is resolved to the users' home dir

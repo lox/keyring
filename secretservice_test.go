@@ -150,6 +150,29 @@ func TestLibSecretRemoveWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestLibSecretRemoveMissingItem(t *testing.T) {
+	kr, teardown := libSecretSetup(t)
+	defer teardown(t)
+
+	item := Item{Key: "llamas", Data: []byte("llamas are great")}
+
+	if err := kr.Set(item); err != nil {
+		t.Fatal(err)
+	}
+
+	err := kr.Remove("no-such-key")
+	if err != ErrKeyNotFound {
+		t.Fatalf("Expected ErrKeyNotFound, got: %s", err)
+	}
+}
+
+func TestLibSecretFirstItemRequiresItem(t *testing.T) {
+	_, err := firstSecretServiceItem(nil)
+	if err != ErrKeyNotFound {
+		t.Fatalf("Expected ErrKeyNotFound, got: %s", err)
+	}
+}
+
 func TestLibSecretRemoveWhenNotEmpty(t *testing.T) {
 	kr, teardown := libSecretSetup(t)
 	defer teardown(t)

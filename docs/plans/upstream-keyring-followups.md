@@ -55,6 +55,8 @@ strings, ignore confusing failures, or avoid the backend entirely.
 - Slice 1 landed in PR #7: macOS Keychain access-denied and user-cancelled
   OSStatus values now wrap `ErrAccessDenied` while preserving the raw platform
   error.
+- Slice 2 landed in PR #8: Linux DBus-backed backends no longer probe DBus from
+  package initialization.
 - `github.com/dvsekhvalnov/jose2go` is already at `v1.8.0`, covering upstream
   PR #141.
 - `gopkg.in/yaml.v3` is already at `v3.0.1`, covering upstream PR #131.
@@ -81,9 +83,11 @@ strings, ignore confusing failures, or avoid the backend entirely.
    `SessionBus`, whose own docs say callers must not close it.
 
 3. **Secret Service consistency pass.**
-   Tighten empty-state, collection lookup, and default collection behavior so
-   Secret Service behaves like the other backends for first-use `Get`, `Keys`,
-   and `Remove` paths.
+   Tighten empty-state and collection lookup behavior so Secret Service behaves
+   like the other backends for first-use `Get`, `Keys`, and `Remove` paths.
+   Clarify collection-name configuration. Default collection alias support is
+   deferred because changing the default collection mapping would affect where
+   existing callers find credentials.
 
 4. **WinCred correctness pass.**
    Harden nil credential handling, key listing, and oversized credential errors

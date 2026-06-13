@@ -74,6 +74,7 @@ func (k *secretsKeyring) openSecrets() error {
 		return err
 	}
 	k.session = session
+	k.collection = nil
 
 	// get the collection if it already exists
 	collections, err := k.service.Collections()
@@ -203,6 +204,14 @@ func (k *secretsKeyring) Set(item Item) error {
 	return nil
 }
 
+func firstSecretServiceItem(items []libsecret.Item) (*libsecret.Item, error) {
+	if len(items) == 0 {
+		return nil, ErrKeyNotFound
+	}
+
+	return &items[0], nil
+}
+
 func (k *secretsKeyring) Remove(key string) error {
 	if err := k.openCollection(); err != nil {
 		if err == errCollectionNotFound {
@@ -216,14 +225,12 @@ func (k *secretsKeyring) Remove(key string) error {
 		return err
 	}
 
-	// nothing to delete
-	if len(items) == 0 {
-		return nil
-	}
-
 	// we dont want to delete more than one anyway
 	// so just get the first item found
-	item := items[0]
+	item, err := firstSecretServiceItem(items)
+	if err != nil {
+		return err
+	}
 
 	locked, err := item.Locked()
 	if err != nil {
