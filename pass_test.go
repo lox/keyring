@@ -15,7 +15,7 @@ import (
 
 func runCmd(t *testing.T, cmds ...string) {
 	t.Helper()
-	cmd := exec.Command(cmds[0], cmds[1:]...)
+	cmd := exec.Command(cmds[0], cmds[1:]...) //nolint:noctx // Test helper runs short-lived setup commands.
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Println(cmd)
@@ -24,8 +24,34 @@ func runCmd(t *testing.T, cmds ...string) {
 	}
 }
 
+func requireCommand(t *testing.T, name string) {
+	t.Helper()
+	if _, err := exec.LookPath(name); err != nil {
+		t.Skipf("%s executable not found: %v", name, err)
+	}
+}
+
+func unsetenv(t *testing.T, key string) {
+	t.Helper()
+
+	value, ok := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		if ok {
+			_ = os.Setenv(key, value)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
+}
+
 func setup(t *testing.T) (*passKeyring, func(t *testing.T)) {
 	t.Helper()
+	requireCommand(t, "pass")
+	requireCommand(t, "gpg")
 
 	pwd, err := os.Getwd()
 	if err != nil {
@@ -44,9 +70,9 @@ func setup(t *testing.T) (*passKeyring, func(t *testing.T)) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Setenv("GNUPGHOME", gnupghome)
-	os.Unsetenv("GPG_AGENT_INFO")
-	os.Unsetenv("GPG_TTY")
+	t.Setenv("GNUPGHOME", gnupghome)
+	unsetenv(t, "GPG_AGENT_INFO")
+	unsetenv(t, "GPG_TTY")
 	runCmd(t, "gpg", "--import", filepath.Join(pwd, "testdata", "test-gpg.key"))
 	runCmd(t, "gpg", "--import-ownertrust", filepath.Join(pwd, "testdata", "test-ownertrust-gpg.txt"))
 
@@ -66,7 +92,9 @@ func setup(t *testing.T) (*passKeyring, func(t *testing.T)) {
 
 	return k, func(t *testing.T) {
 		t.Helper()
-		os.RemoveAll(tmpdir)
+		if err := os.RemoveAll(tmpdir); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -164,7 +192,7 @@ func TestPassKeyringRemoveWhenNotEmpty(t *testing.T) {
 	}
 
 	if err := k.Remove(item.Key); err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 
 	keys, err := k.Keys()

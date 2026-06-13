@@ -1,3 +1,4 @@
+// Command keyring provides a small manual testing CLI for the keyring package.
 package main
 
 import (

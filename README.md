@@ -1,7 +1,7 @@
 Keyring
 =======
-[![Build Status](https://github.com/99designs/keyring/workflows/Continuous%20Integration/badge.svg)](https://github.com/99designs/keyring/actions)
-[![Documentation](https://godoc.org/github.com/99designs/keyring?status.svg)](https://godoc.org/github.com/99designs/keyring)
+[![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg)](https://github.com/lox/keyring/actions/workflows/test.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/99designs/keyring.svg)](https://pkg.go.dev/github.com/99designs/keyring)
 
 Keyring provides a common interface to a range of secure credential storage services. Originally developed as part of [AWS Vault](https://github.com/99designs/aws-vault), a command line tool for securely managing AWS access from developer workstations.
 
@@ -34,12 +34,23 @@ i, _ := ring.Get("foo")
 fmt.Printf("%s", i.Data)
 ```
 
-For more detail on the API please check [the keyring godocs](https://godoc.org/github.com/99designs/keyring)
+For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/99designs/keyring)
 
 
 ## Testing
 
-[Vagrant](https://www.vagrantup.com/) is used to create linux and windows test environments.
+Most tests run with only Go:
+
+```bash
+go test ./...
+go test -race ./...
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+```
+
+The `pass` integration tests require `pass` and `gpg`; they are skipped when those tools are not installed. Secret Service tests require an interactive DBus-backed desktop session and are skipped in GitHub Actions.
+
+[Vagrant](https://www.vagrantup.com/) can still be used to create linux and windows test environments.
 
 ```bash
 # Start vagrant

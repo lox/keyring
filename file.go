@@ -33,7 +33,7 @@ type fileKeyring struct {
 
 func (k *fileKeyring) resolveDir() (string, error) {
 	if k.dir == "" {
-		return "", fmt.Errorf("No directory provided for file keyring")
+		return "", fmt.Errorf("no directory provided for file keyring")
 	}
 
 	dir, err := ExpandTilde(k.dir)
@@ -41,14 +41,17 @@ func (k *fileKeyring) resolveDir() (string, error) {
 		return "", err
 	}
 
-	stat, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		err = os.MkdirAll(dir, 0700)
-	} else if err != nil && stat != nil && !stat.IsDir() {
-		err = fmt.Errorf("%s is a file, not a directory", dir)
+	info, err := os.Stat(dir)
+	switch {
+	case os.IsNotExist(err):
+		return dir, os.MkdirAll(dir, 0700)
+	case err != nil:
+		return "", err
+	case !info.IsDir():
+		return "", fmt.Errorf("%s is a file, not a directory", dir)
 	}
 
-	return dir, err
+	return dir, nil
 }
 
 func (k *fileKeyring) unlock() error {
@@ -161,7 +164,13 @@ func (k *fileKeyring) Remove(key string) error {
 		return err
 	}
 
-	return os.Remove(filename)
+	if err := os.Remove(filename); os.IsNotExist(err) {
+		return ErrKeyNotFound
+	} else if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (k *fileKeyring) Keys() ([]string, error) {
@@ -171,7 +180,10 @@ func (k *fileKeyring) Keys() ([]string, error) {
 	}
 
 	var keys = []string{}
-	files, _ := os.ReadDir(dir)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
 	for _, f := range files {
 		keys = append(keys, filenameUnescape(f.Name()))
 	}

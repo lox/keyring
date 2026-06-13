@@ -108,7 +108,7 @@ func (k *keychain) GetMetadata(key string) (Metadata, error) {
 		ModificationTime: results[0].ModificationDate,
 	}
 
-	debugf("Found metadata for %q", md.Item.Label)
+	debugf("Found metadata for %q", md.Label)
 
 	return md, nil
 }
@@ -127,7 +127,7 @@ func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, ac
 
 	results, err := gokeychain.QueryItem(queryItem)
 	if err != nil {
-		return fmt.Errorf("Failed to query keychain: %v", err)
+		return fmt.Errorf("failed to query keychain: %v", err)
 	}
 	if len(results) == 0 {
 		return errors.New("no results")
@@ -137,7 +137,7 @@ func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, ac
 	kcItem.SetAccess(nil)
 
 	if err := gokeychain.UpdateItem(queryItem, kcItem); err != nil {
-		return fmt.Errorf("Failed to update item in keychain: %v", err)
+		return fmt.Errorf("failed to update item in keychain: %v", err)
 	}
 
 	return nil
