@@ -234,6 +234,15 @@ func TestPassKeyringGetWhenNotEmpty(t *testing.T) {
 	}
 }
 
+func TestPassKeyringGetMetadataUnsupported(t *testing.T) {
+	k := &passKeyring{}
+
+	_, err := k.GetMetadata("no-such-key")
+	if err != ErrMetadataNotSupported {
+		t.Fatalf("expected ErrMetadataNotSupported, got: %v", err)
+	}
+}
+
 func TestPassKeyringKeysWithSymlink(t *testing.T) {
 	k, teardown := setup(t)
 	defer teardown(t)
