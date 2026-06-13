@@ -263,9 +263,15 @@ func TestPassEntryNameRejectsTraversal(t *testing.T) {
 	}{
 		{name: "key escapes prefix", prefix: "keyring", key: "../other-app/token"},
 		{name: "nested key escapes prefix", prefix: "keyring", key: "team/../../token"},
+		{name: "dot key targets prefix parent", prefix: "keyring", key: "."},
+		{name: "dot slash key targets prefix parent", prefix: "keyring", key: "./"},
+		{name: "nested dot key aliases another key", prefix: "keyring", key: "team/./token"},
+		{name: "empty key targets prefix parent", prefix: "keyring", key: ""},
 		{name: "absolute key", prefix: "keyring", key: "/tmp/token"},
 		{name: "prefix escapes store", prefix: "../other-app", key: "token"},
 		{name: "nested prefix escapes store", prefix: "keyring/../other-app", key: "token"},
+		{name: "dot prefix targets store root", prefix: ".", key: "token"},
+		{name: "nested dot prefix aliases another prefix", prefix: "keyring/./team", key: "token"},
 		{name: "absolute prefix", prefix: "/tmp/keyring", key: "token"},
 	}
 

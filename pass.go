@@ -211,6 +211,9 @@ func passEntryName(prefix, key string) (string, error) {
 	if err := validatePassPathPart("prefix", prefix); err != nil {
 		return "", err
 	}
+	if key == "" {
+		return "", fmt.Errorf("invalid pass key %q: empty keys are not allowed", key)
+	}
 	if err := validatePassPathPart("key", key); err != nil {
 		return "", err
 	}
@@ -228,8 +231,8 @@ func validatePassPathPart(label, value string) error {
 		return fmt.Errorf("invalid pass %s %q: absolute paths are not allowed", label, value)
 	}
 	for _, part := range strings.Split(value, string(os.PathSeparator)) {
-		if part == ".." {
-			return fmt.Errorf("invalid pass %s %q: parent directory segments are not allowed", label, value)
+		if part == "." || part == ".." {
+			return fmt.Errorf("invalid pass %s %q: dot path segments are not allowed", label, value)
 		}
 	}
 	return nil
