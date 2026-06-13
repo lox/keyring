@@ -89,7 +89,7 @@ func (k *passKeyring) Get(key string) (Item, error) {
 }
 
 func (k *passKeyring) GetMetadata(_ string) (Metadata, error) {
-	return Metadata{}, nil
+	return Metadata{}, ErrMetadataNotSupported
 }
 
 func (k *passKeyring) Set(i Item) error {
