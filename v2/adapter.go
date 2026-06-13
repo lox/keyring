@@ -3,7 +3,7 @@ package keyring
 import (
 	"context"
 
-	v1 "github.com/99designs/keyring"
+	v1 "github.com/lox/keyring"
 )
 
 type v1Keyring struct {

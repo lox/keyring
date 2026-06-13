@@ -5,6 +5,8 @@ backend selection to explicit provider values. Heavy or vendor-specific backends
 such as 1Password can live in separate modules while still participating in the
 same `Open` call.
 
+Import the package as `github.com/lox/keyring/v2`.
+
 ## Opening A Keyring
 
 ```go

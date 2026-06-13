@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	keyring "github.com/99designs/keyring/v2"
+	keyring "github.com/lox/keyring/v2"
 )
 
 func ExampleOpen() {

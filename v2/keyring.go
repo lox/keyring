@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	v1 "github.com/99designs/keyring"
+	v1 "github.com/lox/keyring"
 )
 
 // Backend identifies a credential storage backend.

@@ -1,7 +1,7 @@
 Keyring
 =======
 [![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg)](https://github.com/lox/keyring/actions/workflows/test.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/99designs/keyring.svg)](https://pkg.go.dev/github.com/99designs/keyring)
+[![Go Reference](https://pkg.go.dev/badge/github.com/lox/keyring.svg)](https://pkg.go.dev/github.com/lox/keyring)
 
 Keyring provides a common interface to a range of secure credential storage services. Originally developed as part of [AWS Vault](https://github.com/99designs/aws-vault), a command line tool for securely managing AWS access from developer workstations.
 
@@ -34,13 +34,15 @@ i, _ := ring.Get("foo")
 fmt.Printf("%s", i.Data)
 ```
 
-For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/99designs/keyring)
+For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/lox/keyring)
 
 ## v2 API
 
 The `v2` package contains the next API shape. It keeps the built-in desktop
 backends in this repository while making backend selection extensible through
 explicit provider values and OptionFunc configuration.
+
+Import it as `github.com/lox/keyring/v2`.
 
 ```go
 ctx := context.Background()

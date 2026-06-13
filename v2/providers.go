@@ -3,7 +3,7 @@ package keyring
 import (
 	"context"
 
-	v1 "github.com/99designs/keyring"
+	v1 "github.com/lox/keyring"
 )
 
 // PromptFunc prompts for a password or passphrase.
