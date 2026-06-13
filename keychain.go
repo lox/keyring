@@ -55,6 +55,7 @@ func (k *keychain) newAccountQuery(key string) gokeychain.Item {
 	query.SetAccount(key)
 	query.SetMatchLimit(gokeychain.MatchLimitOne)
 	k.setMatchSearchList(&query)
+	k.setSynchronizableMatch(&query, k.isSynchronizable)
 	return query
 }
 
@@ -64,6 +65,14 @@ func (k *keychain) setMatchSearchList(item *gokeychain.Item) {
 	}
 
 	item.SetMatchSearchList(gokeychain.NewWithPath(k.path))
+}
+
+func (k *keychain) setSynchronizableMatch(item *gokeychain.Item, isSynchronizable bool) {
+	if !isSynchronizable {
+		return
+	}
+
+	item.SetSynchronizable(gokeychain.SynchronizableAny)
 }
 
 func (k *keychain) existingKeychain() (gokeychain.Keychain, error) {
@@ -142,6 +151,7 @@ func (k *keychain) updateItem(kc gokeychain.Keychain, kcItem gokeychain.Item, ac
 	queryItem.SetAccount(account)
 	queryItem.SetMatchLimit(gokeychain.MatchLimitOne)
 	queryItem.SetReturnAttributes(true)
+	k.setSynchronizableMatch(&queryItem, k.isSynchronizable)
 
 	if k.path != "" {
 		queryItem.SetMatchSearchList(kc)
@@ -187,7 +197,8 @@ func (k *keychain) Set(item Item) error {
 		kcItem.UseKeychain(kc)
 	}
 
-	if k.isSynchronizable && !item.KeychainNotSynchronizable {
+	isSynchronizable := k.isSynchronizable && !item.KeychainNotSynchronizable
+	if isSynchronizable {
 		kcItem.SetSynchronizable(gokeychain.SynchronizableYes)
 	}
 
@@ -197,13 +208,16 @@ func (k *keychain) Set(item Item) error {
 
 	isTrusted := k.isTrusted && !item.KeychainNotTrustApplication
 
-	if isTrusted {
+	switch {
+	case isSynchronizable:
+		debugf("Keychain item is synchronizable and doesn't use legacy access ACLs")
+	case isTrusted:
 		debugf("Keychain item trusts keyring")
 		kcItem.SetAccess(&gokeychain.Access{
 			Label:               item.Label,
 			TrustedApplications: nil,
 		})
-	} else {
+	default:
 		debugf("Keychain item doesn't trust keyring")
 		kcItem.SetAccess(&gokeychain.Access{
 			Label:               item.Label,
@@ -230,6 +244,7 @@ func (k *keychain) Set(item Item) error {
 func (k *keychain) Remove(key string) error {
 	item := k.newItem()
 	item.SetAccount(key)
+	k.setSynchronizableMatch(&item, k.isSynchronizable)
 
 	if k.path != "" {
 		kc, err := k.existingKeychain()
@@ -256,6 +271,7 @@ func (k *keychain) Keys() ([]string, error) {
 	query := k.newItem()
 	query.SetMatchLimit(gokeychain.MatchLimitAll)
 	query.SetReturnAttributes(true)
+	k.setSynchronizableMatch(&query, k.isSynchronizable)
 
 	if k.path != "" {
 		kc, err := k.existingKeychain()
