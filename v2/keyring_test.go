@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const testBackend Backend = "test"
+var testBackend Backend = "test"
 
 func TestOpenUsesProviderOption(t *testing.T) {
 	ctx := context.Background()

@@ -176,6 +176,8 @@ func DefaultProviders() []Provider {
 
 func defaultProviderFor(backend Backend) (Provider, bool) {
 	switch backend {
+	case InvalidBackend:
+		return Provider{}, false
 	case WinCredBackend:
 		return WinCredProvider(), true
 	case KeychainBackend:
@@ -206,9 +208,7 @@ func providerRegistry(providers []Provider) (map[Backend]Provider, []Backend) {
 	out := make(map[Backend]Provider, len(providers))
 	order := make([]Backend, 0, len(defaultBackendOrder)+len(providers))
 
-	for _, backend := range defaultBackendOrder {
-		order = append(order, backend)
-	}
+	order = append(order, defaultBackendOrder...)
 
 	for _, provider := range providers {
 		if _, ok := out[provider.Backend]; !ok && !isDefaultBackend(provider.Backend) {

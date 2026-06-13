@@ -125,8 +125,8 @@ func TestOpenWithProvidersCanWrapBuiltinFileBackend(t *testing.T) {
 
 func TestAvailableBackendsWithProvidersIncludesExternalProviders(t *testing.T) {
 	got := AvailableBackendsWithProviders(
-		Provider{Backend: FileBackend, Open: func(Config) (Keyring, error) { return nil, nil }},
-		Provider{Backend: testExternalBackend, Open: func(Config) (Keyring, error) { return nil, nil }},
+		Provider{Backend: FileBackend, Open: func(Config) (Keyring, error) { return NewArrayKeyring(nil), nil }},
+		Provider{Backend: testExternalBackend, Open: func(Config) (Keyring, error) { return NewArrayKeyring(nil), nil }},
 	)
 
 	fileCount := 0
@@ -178,7 +178,7 @@ func (k testEncodedKeyring) GetMetadata(key string) (Metadata, error) {
 		return Metadata{}, err
 	}
 	if metadata.Item != nil {
-		metadata.Item.Key = key
+		metadata.Key = key
 	}
 	return metadata, nil
 }

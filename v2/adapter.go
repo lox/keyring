@@ -81,9 +81,9 @@ func metadataFromV1(key string, metadata v1.Metadata) Metadata {
 		ModificationTime: metadata.ModificationTime,
 	}
 	if metadata.Item != nil {
-		out.Key = metadata.Item.Key
-		out.Label = metadata.Item.Label
-		out.Description = metadata.Item.Description
+		out.Key = metadata.Key
+		out.Label = metadata.Label
+		out.Description = metadata.Description
 	}
 	return out
 }
