@@ -16,7 +16,7 @@ import (
 var newLibSecretService = libsecret.NewService
 
 func init() {
-	supportedBackends[SecretServiceBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[SecretServiceBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		if cfg.ServiceName == "" {
 			cfg.ServiceName = "secret-service"
 		}

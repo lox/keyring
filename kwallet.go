@@ -20,7 +20,7 @@ func init() {
 		return
 	}
 
-	supportedBackends[KWalletBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[KWalletBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		if cfg.ServiceName == "" {
 			cfg.ServiceName = "kdewallet"
 		}

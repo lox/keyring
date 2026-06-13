@@ -1,16 +1,20 @@
 package keyring
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestArrayKeyringSetWhenEmpty(t *testing.T) {
+	ctx := context.Background()
 	k := &ArrayKeyring{}
 	item := Item{Key: "llamas", Data: []byte("llamas are great")}
 
-	if err := k.Set(item); err != nil {
+	if err := k.Set(ctx, item); err != nil {
 		t.Fatal(err)
 	}
 
-	foundItem, err := k.Get("llamas")
+	foundItem, err := k.Get(ctx, "llamas")
 	if err != nil {
 		t.Fatal(err)
 	}

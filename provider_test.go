@@ -1,38 +1,43 @@
 package keyring
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
 
-const testExternalBackend BackendType = "test-external"
+var testExternalBackend Backend = "test-external"
 
-func TestOpenWithProvidersUsesExternalProvider(t *testing.T) {
+func TestOpenUsesExternalProvider(t *testing.T) {
+	ctx := context.Background()
 	called := false
-	ring, err := OpenWithProviders(Config{
-		AllowedBackends: []BackendType{testExternalBackend},
-		ServiceName:     "external-service",
-	}, Provider{
-		Backend: testExternalBackend,
-		Open: func(cfg Config) (Keyring, error) {
-			called = true
-			return NewArrayKeyring([]Item{{
-				Key:  cfg.ServiceName,
-				Data: []byte("opened"),
-			}}), nil
-		},
-	})
+
+	ring, err := Open(ctx,
+		WithServiceName("external-service"),
+		WithBackends(testExternalBackend),
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(ctx context.Context, opts OpenOptions) (Keyring, error) {
+				called = true
+				return newArrayKeyring(ctx, []Item{{
+					Key:  opts.ServiceName,
+					Data: []byte("opened"),
+				}}), nil
+			},
+		}),
+	)
 	if err != nil {
-		t.Fatalf("OpenWithProviders: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	if !called {
 		t.Fatal("expected external provider to be called")
 	}
 
-	item, err := ring.Get("external-service")
+	item, err := ring.Get(ctx, "external-service")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -41,23 +46,29 @@ func TestOpenWithProvidersUsesExternalProvider(t *testing.T) {
 	}
 }
 
-func TestOpenWithProvidersOverridesBuiltinBackend(t *testing.T) {
+func TestOpenOverridesBuiltinBackend(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	ring, err := OpenWithProviders(Config{
-		AllowedBackends:  []BackendType{FileBackend},
-		FileDir:          dir,
-		FilePasswordFunc: FixedStringPrompt("test-pass"),
-	}, Provider{
-		Backend: FileBackend,
-		Open: func(Config) (Keyring, error) {
-			return NewArrayKeyring(nil), nil
-		},
-	})
+
+	ring, err := Open(ctx,
+		WithServiceName("override"),
+		WithBackends(FileBackend),
+		WithProvider(FileProvider(
+			FileDir(dir),
+			FilePrompt(FixedStringPrompt("test-pass")),
+		)),
+		WithProvider(Provider{
+			Backend: FileBackend,
+			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
+				return newArrayKeyring(ctx, nil), nil
+			},
+		}),
+	)
 	if err != nil {
-		t.Fatalf("OpenWithProviders: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 
-	if err := ring.Set(Item{Key: "llamas", Data: []byte("great")}); err != nil {
+	if err := ring.Set(ctx, Item{Key: "llamas", Data: []byte("great")}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -70,32 +81,38 @@ func TestOpenWithProvidersOverridesBuiltinBackend(t *testing.T) {
 	}
 }
 
-func TestOpenWithProvidersCanWrapBuiltinFileBackend(t *testing.T) {
+func TestOpenCanWrapBuiltinFileBackend(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	ring, err := OpenWithProviders(Config{
-		AllowedBackends:  []BackendType{FileBackend},
-		FileDir:          dir,
-		FilePasswordFunc: FixedStringPrompt("test-pass"),
-	}, Provider{
-		Backend: FileBackend,
-		Open: func(cfg Config) (Keyring, error) {
-			ring, err := Open(cfg)
-			if err != nil {
-				return nil, err
-			}
-			return testEncodedKeyring{inner: ring}, nil
-		},
-	})
+	rawFile := FileProvider(
+		FileDir(dir),
+		FilePrompt(FixedStringPrompt("test-pass")),
+	)
+
+	ring, err := Open(ctx,
+		WithServiceName("file-wrapper"),
+		WithBackends(FileBackend),
+		WithProvider(Provider{
+			Backend: FileBackend,
+			Open: func(ctx context.Context, opts OpenOptions) (Keyring, error) {
+				ring, err := rawFile.Open(ctx, opts)
+				if err != nil {
+					return nil, err
+				}
+				return testEncodedKeyring{inner: ring}, nil
+			},
+		}),
+	)
 	if err != nil {
-		t.Fatalf("OpenWithProviders: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 
 	key := `token:default:user@example.com/<>:"\|?*%`
-	if err := ring.Set(Item{Key: key, Data: []byte("secret")}); err != nil {
+	if err := ring.Set(ctx, Item{Key: key, Data: []byte("secret")}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
-	item, err := ring.Get(key)
+	item, err := ring.Get(ctx, key)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -103,7 +120,7 @@ func TestOpenWithProvidersCanWrapBuiltinFileBackend(t *testing.T) {
 		t.Fatalf("unexpected item: key=%q data=%q", item.Key, item.Data)
 	}
 
-	keys, err := ring.Keys()
+	keys, err := ring.Keys(ctx)
 	if err != nil {
 		t.Fatalf("Keys: %v", err)
 	}
@@ -123,11 +140,14 @@ func TestOpenWithProvidersCanWrapBuiltinFileBackend(t *testing.T) {
 	}
 }
 
-func TestAvailableBackendsWithProvidersIncludesExternalProviders(t *testing.T) {
-	got := AvailableBackendsWithProviders(
-		Provider{Backend: FileBackend, Open: func(Config) (Keyring, error) { return NewArrayKeyring(nil), nil }},
-		Provider{Backend: testExternalBackend, Open: func(Config) (Keyring, error) { return NewArrayKeyring(nil), nil }},
-	)
+func TestAvailableIncludesExternalProviders(t *testing.T) {
+	got, err := Available(WithProviders(
+		Provider{Backend: FileBackend, Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) { return newArrayKeyring(ctx, nil), nil }},
+		Provider{Backend: testExternalBackend, Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) { return newArrayKeyring(ctx, nil), nil }},
+	))
+	if err != nil {
+		t.Fatalf("Available: %v", err)
+	}
 
 	fileCount := 0
 	foundExternal := false
@@ -147,15 +167,105 @@ func TestAvailableBackendsWithProvidersIncludesExternalProviders(t *testing.T) {
 	}
 }
 
-func TestOpenWithProvidersRejectsInvalidProvider(t *testing.T) {
-	_, err := OpenWithProviders(Config{
-		AllowedBackends: []BackendType{testExternalBackend},
-	}, Provider{Backend: testExternalBackend})
-	if err == nil {
-		t.Fatal("expected invalid provider error")
+func TestAvailableHonorsConfiguredBackends(t *testing.T) {
+	got, err := Available(
+		WithBackends(testExternalBackend),
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
+				return newArrayKeyring(ctx, nil), nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Available: %v", err)
 	}
-	if !strings.Contains(err.Error(), "opener is nil") {
+	if !slices.Equal(got, []Backend{testExternalBackend}) {
+		t.Fatalf("expected configured backend only, got %v", got)
+	}
+}
+
+func TestOpenRejectsInvalidProvider(t *testing.T) {
+	_, err := Open(context.Background(),
+		WithBackends(testExternalBackend),
+		WithProvider(Provider{Backend: testExternalBackend}),
+	)
+	if !errors.Is(err, ErrInvalidOption) {
+		t.Fatalf("expected invalid option, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "open function is nil") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOpenFallsBackOnUnavailable(t *testing.T) {
+	ring, err := Open(context.Background(),
+		WithBackends("missing", testExternalBackend),
+		WithProvider(Provider{
+			Backend: "missing",
+			Open: func(context.Context, OpenOptions) (Keyring, error) {
+				return nil, ErrUnavailable
+			},
+		}),
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
+				return newArrayKeyring(ctx, nil), nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if ring == nil {
+		t.Fatal("expected fallback ring")
+	}
+}
+
+func TestOpenStopsOnNonUnavailableByDefault(t *testing.T) {
+	errDenied := errors.New("denied")
+	_, err := Open(context.Background(),
+		WithBackends("denied", testExternalBackend),
+		WithProvider(Provider{
+			Backend: "denied",
+			Open: func(context.Context, OpenOptions) (Keyring, error) {
+				return nil, errDenied
+			},
+		}),
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
+				return newArrayKeyring(ctx, nil), nil
+			},
+		}),
+	)
+	if !errors.Is(err, errDenied) {
+		t.Fatalf("expected denied error, got %v", err)
+	}
+}
+
+func TestOpenCanFallbackOnAnyError(t *testing.T) {
+	ring, err := Open(context.Background(),
+		WithFallbackPolicy(FallbackOnError),
+		WithBackends("denied", testExternalBackend),
+		WithProvider(Provider{
+			Backend: "denied",
+			Open: func(context.Context, OpenOptions) (Keyring, error) {
+				return nil, errors.New("denied")
+			},
+		}),
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
+				return newArrayKeyring(ctx, nil), nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if ring == nil {
+		t.Fatal("expected fallback ring")
 	}
 }
 
@@ -163,8 +273,8 @@ type testEncodedKeyring struct {
 	inner Keyring
 }
 
-func (k testEncodedKeyring) Get(key string) (Item, error) {
-	item, err := k.inner.Get(testEncodeKey(key))
+func (k testEncodedKeyring) Get(ctx context.Context, key string) (Item, error) {
+	item, err := k.inner.Get(ctx, testEncodeKey(key))
 	if err != nil {
 		return Item{}, err
 	}
@@ -172,8 +282,12 @@ func (k testEncodedKeyring) Get(key string) (Item, error) {
 	return item, nil
 }
 
-func (k testEncodedKeyring) GetMetadata(key string) (Metadata, error) {
-	metadata, err := k.inner.GetMetadata(testEncodeKey(key))
+func (k testEncodedKeyring) Metadata(ctx context.Context, key string) (Metadata, error) {
+	reader, ok := k.inner.(MetadataReader)
+	if !ok {
+		return Metadata{}, ErrMetadataUnsupported
+	}
+	metadata, err := reader.Metadata(ctx, testEncodeKey(key))
 	if err != nil {
 		return Metadata{}, err
 	}
@@ -183,17 +297,17 @@ func (k testEncodedKeyring) GetMetadata(key string) (Metadata, error) {
 	return metadata, nil
 }
 
-func (k testEncodedKeyring) Set(item Item) error {
+func (k testEncodedKeyring) Set(ctx context.Context, item Item) error {
 	item.Key = testEncodeKey(item.Key)
-	return k.inner.Set(item)
+	return k.inner.Set(ctx, item)
 }
 
-func (k testEncodedKeyring) Remove(key string) error {
-	return k.inner.Remove(testEncodeKey(key))
+func (k testEncodedKeyring) Remove(ctx context.Context, key string) error {
+	return k.inner.Remove(ctx, testEncodeKey(key))
 }
 
-func (k testEncodedKeyring) Keys() ([]string, error) {
-	keys, err := k.inner.Keys()
+func (k testEncodedKeyring) Keys(ctx context.Context) ([]string, error) {
+	keys, err := k.inner.Keys(ctx)
 	if err != nil {
 		return nil, err
 	}

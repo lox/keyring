@@ -30,7 +30,7 @@ type keychain struct {
 }
 
 func init() {
-	supportedBackends[KeychainBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[KeychainBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		if cfg.KeychainName != "" && cfg.KeychainSynchronizable {
 			return nil, errKeychainSynchronizableWithCustomKeychain
 		}

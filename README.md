@@ -20,29 +20,27 @@ Currently Keyring supports the following backends
 The short version of how to use keyring is shown below.
 
 ```go
-ring, _ := keyring.Open(keyring.Config{
-  ServiceName: "example",
-})
+ctx := context.Background()
 
-_ = ring.Set(keyring.Item{
+ring, _ := keyring.Open(ctx, keyring.WithServiceName("example"))
+
+_ = ring.Set(ctx, keyring.Item{
 	Key: "foo",
 	Data: []byte("secret-bar"),
 })
 
-i, _ := ring.Get("foo")
+i, _ := ring.Get(ctx, "foo")
 
 fmt.Printf("%s", i.Data)
 ```
 
 For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/lox/keyring)
 
-## v2 API
+## Provider API
 
-The `v2` package contains the next API shape. It keeps the built-in desktop
-backends in this repository while making backend selection extensible through
-explicit provider values and OptionFunc configuration.
-
-Import it as `github.com/lox/keyring/v2`.
+The root package keeps the built-in desktop backends in this repository while
+making backend selection extensible through explicit provider values and
+OptionFunc configuration.
 
 ```go
 ctx := context.Background()
@@ -78,8 +76,7 @@ ring, err := keyring.Open(ctx,
 )
 ```
 
-See [docs/v2-api.md](docs/v2-api.md) and the examples in the `v2` package for
-more detail.
+See [docs/api.md](docs/api.md) and the package examples for more detail.
 
 
 ## Testing

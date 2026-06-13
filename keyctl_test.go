@@ -4,6 +4,7 @@
 package keyring_test
 
 import (
+	"context"
 	"errors"
 	"math/rand"
 	"syscall"
@@ -19,6 +20,17 @@ import (
 var ringname = getRandomKeyringName(16)
 
 const ringparent = "thread"
+
+func openKeyCtl(ctx context.Context, serviceName, scope string, perm uint32) (keyring.Keyring, error) {
+	return keyring.Open(ctx,
+		keyring.WithServiceName(serviceName),
+		keyring.WithBackends(keyring.KeyCtlBackend),
+		keyring.WithProvider(keyring.KeyCtlProvider(
+			keyring.KeyCtlScope(scope),
+			keyring.KeyCtlPerm(perm),
+		)),
+	)
+}
 
 func getRandomKeyringName(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -64,23 +76,19 @@ func TestKeyCtlIsAvailable(t *testing.T) {
 }
 
 func TestKeyCtlOpenFailWrongScope(t *testing.T) {
+	ctx := context.Background()
 	failingScopes := []string{"", "group", "invalid"}
 	for _, scope := range failingScopes {
-		_, err := keyring.Open(keyring.Config{
-			AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-			KeyCtlScope:     scope,
-		})
+		_, err := openKeyCtl(ctx, "", scope, 0)
 		require.Errorf(t, err, "scope %q should fail", scope)
 	}
 }
 
 func TestKeyCtlOpen(t *testing.T) {
+	ctx := context.Background()
 	scopes := []string{"user", "session", "process", "thread"}
 	for _, scope := range scopes {
-		_, err := keyring.Open(keyring.Config{
-			AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-			KeyCtlScope:     scope,
-		})
+		_, err := openKeyCtl(ctx, "", scope, 0)
 		require.NoError(t, err)
 	}
 }
@@ -91,20 +99,13 @@ func TestKeyCtlOpenNamed(t *testing.T) {
 	require.NoErrorf(t, err, "checking for ring %q in scope %q failed: %v", ringname, ringparent, err)
 	t.Cleanup(cleanupNamedKeyring)
 
-	_, err = keyring.Open(keyring.Config{
-		AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-		KeyCtlScope:     ringparent,
-		ServiceName:     ringname,
-	})
+	_, err = openKeyCtl(context.Background(), ringname, ringparent, 0)
 	require.NoError(t, err)
 }
 
 func TestKeyCtlSet(t *testing.T) {
-	kr, err := keyring.Open(keyring.Config{
-		AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-		KeyCtlScope:     "user",
-		KeyCtlPerm:      0x3f3f0000, // "alswrvalswrv------------"
-	})
+	ctx := context.Background()
+	kr, err := openKeyCtl(ctx, "", "user", 0x3f3f0000) // "alswrvalswrv------------"
 	require.NoError(t, err)
 
 	item1 := keyring.Item{
@@ -112,16 +113,16 @@ func TestKeyCtlSet(t *testing.T) {
 		Data: []byte("loose lips sink ships"),
 	}
 
-	require.NoError(t, kr.Set(item1))
+	require.NoError(t, kr.Set(ctx, item1))
 
-	item2, err := kr.Get("test")
+	item2, err := kr.Get(ctx, "test")
 	require.NoError(t, err)
 
 	require.Equal(t, item1, item2)
 
-	require.NoError(t, kr.Remove("test"))
+	require.NoError(t, kr.Remove(ctx, "test"))
 
-	_, err = kr.Get("test")
+	_, err = kr.Get(ctx, "test")
 	require.Error(t, err)
 	require.ErrorIs(t, err, keyring.ErrKeyNotFound)
 }
@@ -132,12 +133,8 @@ func TestKeyCtlSetNamed(t *testing.T) {
 	require.NoErrorf(t, err, "checking for ring %q in scope %q failed: %v", ringname, ringparent, err)
 	t.Cleanup(cleanupNamedKeyring)
 
-	kr, err := keyring.Open(keyring.Config{
-		AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-		KeyCtlScope:     ringparent,
-		ServiceName:     ringname,
-		KeyCtlPerm:      0x3f3f0000, // "alswrvalswrv------------"
-	})
+	ctx := context.Background()
+	kr, err := openKeyCtl(ctx, ringname, ringparent, 0x3f3f0000) // "alswrvalswrv------------"
 	require.NoError(t, err)
 
 	item1 := keyring.Item{
@@ -145,16 +142,16 @@ func TestKeyCtlSetNamed(t *testing.T) {
 		Data: []byte("loose lips sink ships"),
 	}
 
-	require.NoError(t, kr.Set(item1))
+	require.NoError(t, kr.Set(ctx, item1))
 
-	item2, err := kr.Get("test")
+	item2, err := kr.Get(ctx, "test")
 	require.NoError(t, err)
 
 	require.Equal(t, item1, item2)
 
-	require.NoError(t, kr.Remove("test"))
+	require.NoError(t, kr.Remove(ctx, "test"))
 
-	_, err = kr.Get("test")
+	_, err = kr.Get(ctx, "test")
 	require.Error(t, err)
 	require.ErrorIs(t, err, keyring.ErrKeyNotFound)
 }
@@ -165,34 +162,30 @@ func TestKeyCtlList(t *testing.T) {
 	require.NoErrorf(t, err, "checking for ring %q in scope %q failed: %v", ringname, ringparent, err)
 	t.Cleanup(cleanupNamedKeyring)
 
-	kr, err := keyring.Open(keyring.Config{
-		AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-		KeyCtlScope:     ringparent,
-		ServiceName:     ringname,
-		KeyCtlPerm:      0x3f3f0000, // "alswrvalswrv------------"
-	})
+	ctx := context.Background()
+	kr, err := openKeyCtl(ctx, ringname, ringparent, 0x3f3f0000) // "alswrvalswrv------------"
 	require.NoError(t, err)
 
 	item1 := keyring.Item{
 		Key:  "test",
 		Data: []byte("loose lips sink ships"),
 	}
-	require.NoError(t, kr.Set(item1))
+	require.NoError(t, kr.Set(ctx, item1))
 
 	item2 := keyring.Item{
 		Key:  "foobar",
 		Data: []byte("don't foo the bar"),
 	}
-	require.NoError(t, kr.Set(item2))
+	require.NoError(t, kr.Set(ctx, item2))
 
-	keys, err := kr.Keys()
+	keys, err := kr.Keys(ctx)
 	require.NoError(t, err)
 
 	expected := []string{"test", "foobar"}
 	require.ElementsMatch(t, keys, expected)
 
-	require.NoError(t, kr.Remove("test"))
-	require.NoError(t, kr.Remove("foobar"))
+	require.NoError(t, kr.Remove(ctx, "test"))
+	require.NoError(t, kr.Remove(ctx, "foobar"))
 }
 
 func TestKeyCtlGetNonExisting(t *testing.T) {
@@ -201,15 +194,11 @@ func TestKeyCtlGetNonExisting(t *testing.T) {
 	require.NoErrorf(t, err, "checking for ring %q in scope %q failed: %v", ringname, ringparent, err)
 	t.Cleanup(cleanupNamedKeyring)
 
-	kr, err := keyring.Open(keyring.Config{
-		AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-		KeyCtlScope:     ringparent,
-		ServiceName:     ringname,
-		KeyCtlPerm:      0x3f3f0000, // "alswrvalswrv------------"
-	})
+	ctx := context.Background()
+	kr, err := openKeyCtl(ctx, ringname, ringparent, 0x3f3f0000) // "alswrvalswrv------------"
 	require.NoError(t, err)
 
-	_, err = kr.Get("llamas")
+	_, err = kr.Get(ctx, "llamas")
 	require.Error(t, err)
 	require.ErrorIs(t, err, keyring.ErrKeyNotFound)
 }
@@ -220,15 +209,11 @@ func TestKeyCtlRemoveNonExisting(t *testing.T) {
 	require.NoErrorf(t, err, "checking for ring %q in scope %q failed: %v", ringname, ringparent, err)
 	t.Cleanup(cleanupNamedKeyring)
 
-	kr, err := keyring.Open(keyring.Config{
-		AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-		KeyCtlScope:     ringparent,
-		ServiceName:     ringname,
-		KeyCtlPerm:      0x3f3f0000, // "alswrvalswrv------------"
-	})
+	ctx := context.Background()
+	kr, err := openKeyCtl(ctx, ringname, ringparent, 0x3f3f0000) // "alswrvalswrv------------"
 	require.NoError(t, err)
 
-	err = kr.Remove("no-such-key")
+	err = kr.Remove(ctx, "no-such-key")
 	require.Error(t, err)
 	require.ErrorIs(t, err, keyring.ErrKeyNotFound)
 }
@@ -239,15 +224,11 @@ func TestKeyCtlListEmptyKeyring(t *testing.T) {
 	require.NoErrorf(t, err, "checking for ring %q in scope %q failed: %v", ringname, ringparent, err)
 	t.Cleanup(cleanupNamedKeyring)
 
-	kr, err := keyring.Open(keyring.Config{
-		AllowedBackends: []keyring.BackendType{keyring.KeyCtlBackend},
-		KeyCtlScope:     ringparent,
-		ServiceName:     ringname,
-		KeyCtlPerm:      0x3f3f0000, // "alswrvalswrv------------"
-	})
+	ctx := context.Background()
+	kr, err := openKeyCtl(ctx, ringname, ringparent, 0x3f3f0000) // "alswrvalswrv------------"
 	require.NoError(t, err)
 
-	keys, err := kr.Keys()
+	keys, err := kr.Keys(ctx)
 	require.NoError(t, err)
 	require.Len(t, keys, 0)
 }

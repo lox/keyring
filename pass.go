@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	supportedBackends[PassBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[PassBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		var err error
 
 		pass := &passKeyring{

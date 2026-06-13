@@ -4,6 +4,7 @@
 package keyring
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -18,15 +19,21 @@ func TestKWalletOpenFallsBackWhenDBusIsUnavailable(t *testing.T) {
 		newKwalletBinding = originalNewKwalletBinding
 	})
 
-	ring, err := Open(Config{
-		AllowedBackends:  []BackendType{KWalletBackend, FileBackend},
-		FileDir:          t.TempDir(),
-		FilePasswordFunc: FixedStringPrompt("test password"),
-	})
+	ring, err := Open(context.Background(),
+		WithBackends(KWalletBackend, FileBackend),
+		WithProvider(FileProvider(
+			FileDir(t.TempDir()),
+			FilePrompt(FixedStringPrompt("test password")),
+		)),
+	)
 	if err != nil {
 		t.Fatalf("expected file fallback after KWallet opener failure, got %v", err)
 	}
-	if _, ok := ring.(*fileKeyring); !ok {
-		t.Fatalf("expected *fileKeyring fallback, got %T", ring)
+	adapter, ok := ring.(backendAdapter)
+	if !ok {
+		t.Fatalf("expected backendAdapter, got %T", ring)
+	}
+	if _, ok := adapter.ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring fallback, got %T", adapter.ring)
 	}
 }

@@ -4,6 +4,7 @@
 package keyring
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -130,8 +131,7 @@ func TestOSXKeychainKeyringListKeysWhenNotEmpty(t *testing.T) {
 func TestOSXKeychainConfigMapsOptions(t *testing.T) {
 	keychainName := tempKeychainName(t)
 
-	ring, err := Open(Config{
-		AllowedBackends:                []BackendType{KeychainBackend},
+	ring, err := supportedBackends[KeychainBackend](Config{
 		ServiceName:                    "test",
 		KeychainName:                   keychainName,
 		KeychainPasswordFunc:           FixedStringPrompt("test password"),
@@ -158,8 +158,7 @@ func TestOSXKeychainConfigMapsOptions(t *testing.T) {
 }
 
 func TestOSXKeychainConfigMapsSynchronizable(t *testing.T) {
-	ring, err := Open(Config{
-		AllowedBackends:        []BackendType{KeychainBackend},
+	ring, err := supportedBackends[KeychainBackend](Config{
 		ServiceName:            "test",
 		KeychainSynchronizable: true,
 	})
@@ -177,29 +176,37 @@ func TestOSXKeychainConfigMapsSynchronizable(t *testing.T) {
 }
 
 func TestOSXKeychainRejectsSynchronizableCustomKeychain(t *testing.T) {
-	_, err := Open(Config{
-		AllowedBackends:        []BackendType{KeychainBackend, FileBackend},
-		ServiceName:            "test",
-		KeychainName:           tempKeychainName(t),
-		KeychainSynchronizable: true,
-	})
+	_, err := Open(context.Background(),
+		WithServiceName("test"),
+		WithBackends(KeychainBackend, FileBackend),
+		WithProvider(KeychainProvider(
+			KeychainName(tempKeychainName(t)),
+			KeychainSynchronizable(true),
+		)),
+	)
 	if !errors.Is(err, errKeychainSynchronizableWithCustomKeychain) {
 		t.Fatalf("expected synchronizable custom keychain to be rejected, got %v", err)
 	}
 }
 
 func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenFileBackendIsPreferred(t *testing.T) {
-	ring, err := Open(Config{
-		AllowedBackends:        []BackendType{FileBackend, KeychainBackend},
-		ServiceName:            "test",
-		KeychainName:           tempKeychainName(t),
-		KeychainSynchronizable: true,
-	})
+	ring, err := Open(context.Background(),
+		WithServiceName("test"),
+		WithBackends(FileBackend, KeychainBackend),
+		WithProvider(KeychainProvider(
+			KeychainName(tempKeychainName(t)),
+			KeychainSynchronizable(true),
+		)),
+	)
 	if err != nil {
 		t.Fatalf("expected file backend to open before keychain validation, got %v", err)
 	}
-	if _, ok := ring.(*fileKeyring); !ok {
-		t.Fatalf("expected *fileKeyring, got %T", ring)
+	adapter, ok := ring.(backendAdapter)
+	if !ok {
+		t.Fatalf("expected backendAdapter, got %T", ring)
+	}
+	if _, ok := adapter.ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring, got %T", adapter.ring)
 	}
 }
 
@@ -213,17 +220,19 @@ func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsUnsupported(
 		supportedBackends[KeychainBackend] = keychainOpener
 	})
 
-	ring, err := Open(Config{
-		AllowedBackends:        []BackendType{KeychainBackend, FileBackend},
-		ServiceName:            "test",
-		KeychainName:           tempKeychainName(t),
-		KeychainSynchronizable: true,
-	})
+	ring, err := Open(context.Background(),
+		WithServiceName("test"),
+		WithBackends(KeychainBackend, FileBackend),
+	)
 	if err != nil {
 		t.Fatalf("expected fallback backend to open when keychain backend is unsupported, got %v", err)
 	}
-	if _, ok := ring.(*fileKeyring); !ok {
-		t.Fatalf("expected *fileKeyring, got %T", ring)
+	adapter, ok := ring.(backendAdapter)
+	if !ok {
+		t.Fatalf("expected backendAdapter, got %T", ring)
+	}
+	if _, ok := adapter.ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring, got %T", adapter.ring)
 	}
 }
 
@@ -303,6 +312,7 @@ func TestOSXKeychainLeavesOtherErrorsUnchanged(t *testing.T) {
 }
 
 func TestOSXKeychainGetMetadataUsesConfiguredKeychain(t *testing.T) {
+	ctx := context.Background()
 	ring := newTestKeyring(t, "test-metadata")
 	item := Item{
 		Key:         "llamas",
@@ -311,11 +321,15 @@ func TestOSXKeychainGetMetadataUsesConfiguredKeychain(t *testing.T) {
 		Data:        []byte("llamas are ok"),
 	}
 
-	if err := ring.Set(item); err != nil {
+	if err := ring.Set(ctx, item); err != nil {
 		t.Fatal(err)
 	}
 
-	metadata, err := ring.GetMetadata(item.Key)
+	reader, ok := ring.(MetadataReader)
+	if !ok {
+		t.Fatal("expected metadata reader")
+	}
+	metadata, err := reader.Metadata(ctx, item.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,13 +367,15 @@ func newTestKeychain(t *testing.T) *keychain {
 func newTestKeyring(t *testing.T, service string) Keyring {
 	t.Helper()
 
-	ring, err := Open(Config{
-		AllowedBackends:          []BackendType{KeychainBackend},
-		ServiceName:              service,
-		KeychainName:             tempKeychainName(t),
-		KeychainPasswordFunc:     FixedStringPrompt("test password"),
-		KeychainTrustApplication: true,
-	})
+	ring, err := Open(context.Background(),
+		WithServiceName(service),
+		WithBackends(KeychainBackend),
+		WithProvider(KeychainProvider(
+			KeychainName(tempKeychainName(t)),
+			KeychainPrompt(FixedStringPrompt("test password")),
+			KeychainTrustApplication(true),
+		)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

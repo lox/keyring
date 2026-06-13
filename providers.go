@@ -2,20 +2,9 @@ package keyring
 
 import (
 	"context"
-
-	v1 "github.com/lox/keyring"
+	"errors"
+	"fmt"
 )
-
-// PromptFunc prompts for a password or passphrase.
-type PromptFunc func(string) (string, error)
-
-// FixedStringPrompt returns a prompt that always returns password.
-func FixedStringPrompt(password string) PromptFunc {
-	return func(string) (string, error) { return password, nil }
-}
-
-// TerminalPrompt prompts for a passphrase on the terminal.
-var TerminalPrompt PromptFunc = PromptFunc(v1.TerminalPrompt)
 
 // FileOption configures the built-in encrypted file provider.
 type FileOption func(*fileConfig)
@@ -43,10 +32,10 @@ func FileProvider(opts ...FileOption) Provider {
 			opt(&cfg)
 		}
 	}
-	return v1Provider(FileBackend, func(v1cfg *v1.Config) {
-		v1cfg.FileDir = cfg.dir
+	return builtinProvider(FileBackend, func(backendCfg *Config) {
+		backendCfg.FileDir = cfg.dir
 		if cfg.prompt != nil {
-			v1cfg.FilePasswordFunc = v1.PromptFunc(cfg.prompt)
+			backendCfg.FilePasswordFunc = cfg.prompt
 		}
 	})
 }
@@ -102,15 +91,15 @@ func KeychainProvider(opts ...KeychainOption) Provider {
 			opt(&cfg)
 		}
 	}
-	return v1Provider(KeychainBackend, func(v1cfg *v1.Config) {
-		v1cfg.KeychainName = cfg.name
-		v1cfg.KeychainSynchronizable = cfg.synchronizable
-		v1cfg.KeychainAccessibleWhenUnlocked = cfg.accessibleWhenUnlocked
+	return builtinProvider(KeychainBackend, func(backendCfg *Config) {
+		backendCfg.KeychainName = cfg.name
+		backendCfg.KeychainSynchronizable = cfg.synchronizable
+		backendCfg.KeychainAccessibleWhenUnlocked = cfg.accessibleWhenUnlocked
 		if cfg.trustApplicationConfigured {
-			v1cfg.KeychainTrustApplication = cfg.trustApplication
+			backendCfg.KeychainTrustApplication = cfg.trustApplication
 		}
 		if cfg.passwordFunc != nil {
-			v1cfg.KeychainPasswordFunc = v1.PromptFunc(cfg.passwordFunc)
+			backendCfg.KeychainPasswordFunc = cfg.passwordFunc
 		}
 	})
 }
@@ -135,8 +124,8 @@ func SecretServiceProvider(opts ...SecretServiceOption) Provider {
 			opt(&cfg)
 		}
 	}
-	return v1Provider(SecretServiceBackend, func(v1cfg *v1.Config) {
-		v1cfg.LibSecretCollectionName = cfg.collectionName
+	return builtinProvider(SecretServiceBackend, func(backendCfg *Config) {
+		backendCfg.LibSecretCollectionName = cfg.collectionName
 	})
 }
 
@@ -166,9 +155,9 @@ func KWalletProvider(opts ...KWalletOption) Provider {
 			opt(&cfg)
 		}
 	}
-	return v1Provider(KWalletBackend, func(v1cfg *v1.Config) {
-		v1cfg.KWalletAppID = cfg.appID
-		v1cfg.KWalletFolder = cfg.folder
+	return builtinProvider(KWalletBackend, func(backendCfg *Config) {
+		backendCfg.KWalletAppID = cfg.appID
+		backendCfg.KWalletFolder = cfg.folder
 	})
 }
 
@@ -198,9 +187,9 @@ func KeyCtlProvider(opts ...KeyCtlOption) Provider {
 			opt(&cfg)
 		}
 	}
-	return v1Provider(KeyCtlBackend, func(v1cfg *v1.Config) {
-		v1cfg.KeyCtlScope = cfg.scope
-		v1cfg.KeyCtlPerm = cfg.perm
+	return builtinProvider(KeyCtlBackend, func(backendCfg *Config) {
+		backendCfg.KeyCtlScope = cfg.scope
+		backendCfg.KeyCtlPerm = cfg.perm
 	})
 }
 
@@ -236,10 +225,10 @@ func PassProvider(opts ...PassOption) Provider {
 			opt(&cfg)
 		}
 	}
-	return v1Provider(PassBackend, func(v1cfg *v1.Config) {
-		v1cfg.PassDir = cfg.dir
-		v1cfg.PassCmd = cfg.cmd
-		v1cfg.PassPrefix = cfg.prefix
+	return builtinProvider(PassBackend, func(backendCfg *Config) {
+		backendCfg.PassDir = cfg.dir
+		backendCfg.PassCmd = cfg.cmd
+		backendCfg.PassPrefix = cfg.prefix
 	})
 }
 
@@ -263,12 +252,12 @@ func WinCredProvider(opts ...WinCredOption) Provider {
 			opt(&cfg)
 		}
 	}
-	return v1Provider(WinCredBackend, func(v1cfg *v1.Config) {
-		v1cfg.WinCredPrefix = cfg.prefix
+	return builtinProvider(WinCredBackend, func(backendCfg *Config) {
+		backendCfg.WinCredPrefix = cfg.prefix
 	})
 }
 
-func v1Provider(backend Backend, apply func(*v1.Config)) Provider {
+func builtinProvider(backend Backend, apply func(*Config)) Provider {
 	return Provider{
 		Backend: backend,
 		Open: func(ctx context.Context, opts OpenOptions) (Keyring, error) {
@@ -276,24 +265,28 @@ func v1Provider(backend Backend, apply func(*v1.Config)) Provider {
 				return nil, err
 			}
 
-			cfg := v1.Config{
+			opener, ok := supportedBackends[backend]
+			if !ok {
+				return nil, fmt.Errorf("%w: %s", ErrUnavailable, backend)
+			}
+
+			cfg := Config{
 				ServiceName:     opts.ServiceName,
-				AllowedBackends: []v1.BackendType{v1Backend(backend)},
+				AllowedBackends: []Backend{backend},
 			}
 			if apply != nil {
 				apply(&cfg)
 			}
 
-			ring, err := v1.Open(cfg)
+			ring, err := opener(cfg)
 			if err != nil {
-				return nil, mapError(err)
+				if errors.Is(err, errKeychainSynchronizableWithCustomKeychain) {
+					return nil, err
+				}
+				return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 			}
 
-			return v1Keyring{ring: ring}, nil
+			return backendAdapter{ring: ring}, nil
 		},
 	}
-}
-
-func v1Backend(backend Backend) v1.BackendType {
-	return v1.BackendType(backend)
 }

@@ -55,7 +55,7 @@ type keyctlKeyring struct {
 }
 
 func init() {
-	supportedBackends[KeyCtlBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[KeyCtlBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		keyring := keyctlKeyring{}
 		if cfg.KeyCtlPerm > 0 {
 			keyring.perm = cfg.KeyCtlPerm

@@ -1,11 +1,9 @@
-# v2 API
+# API
 
-The v2 API keeps keyring's stable desktop backends in this repository, but moves
-backend selection to explicit provider values. Heavy or vendor-specific backends
-such as 1Password can live in separate modules while still participating in the
-same `Open` call.
-
-Import the package as `github.com/lox/keyring/v2`.
+The root `github.com/lox/keyring` package keeps keyring's stable desktop
+backends in this repository, but moves backend selection to explicit provider
+values. Heavy or vendor-specific backends such as 1Password can live in separate
+modules while still participating in the same `Open` call.
 
 ## Opening A Keyring
 
@@ -112,7 +110,7 @@ By default, `Open` tries the next backend only when a provider returns
 `ErrUnavailable`. Other errors, such as access denied or invalid configuration,
 stop the open attempt and are returned to the caller.
 
-Callers that want the v1-style "try the next backend after any open error"
+Callers that want the previous "try the next backend after any open error"
 behavior can opt in:
 
 ```go
