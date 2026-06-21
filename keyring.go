@@ -145,8 +145,6 @@ var ErrMetadataNeedsCredentials = ErrMetadataNeedsUnlock
 // ErrMetadataNotSupported is returned when metadata is not available.
 var ErrMetadataNotSupported = ErrMetadataUnsupported
 
-var errKeychainSynchronizableWithCustomKeychain = errors.New("keychain synchronizable is not supported with custom keychains")
-
 // Open opens the first configured backend that is available.
 func Open(ctx context.Context, opts ...Option) (Keyring, error) {
 	cfg, err := newOptions(opts)

@@ -18,6 +18,8 @@ const (
 
 var errKeychainUpdateItemNotFound = errors.New("keychain item not found")
 
+var errKeychainSynchronizableWithCustomKeychain = errors.New("keychain synchronizable is not supported with custom keychains")
+
 type keychain struct {
 	path    string
 	service string
