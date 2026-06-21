@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-
+	"fmt"
 	"strings"
 
 	"github.com/gsterjov/go-libsecret"
@@ -16,7 +16,7 @@ import (
 var newLibSecretService = libsecret.NewService
 
 func init() {
-	supportedBackends[SecretServiceBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[SecretServiceBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		if cfg.ServiceName == "" {
 			cfg.ServiceName = "secret-service"
 		}
@@ -26,7 +26,7 @@ func init() {
 
 		service, err := newLibSecretService()
 		if err != nil {
-			return &secretsKeyring{}, err
+			return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 		}
 
 		ring := &secretsKeyring{
@@ -34,7 +34,10 @@ func init() {
 			service: service,
 		}
 
-		return ring, ring.openSecrets()
+		if err := ring.openSecrets(); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		}
+		return ring, nil
 	})
 }
 

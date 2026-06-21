@@ -5,7 +5,6 @@ package keyring
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,7 +13,7 @@ import (
 )
 
 func init() {
-	supportedBackends[PassBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[PassBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		var err error
 
 		pass := &passKeyring{
@@ -47,7 +46,7 @@ func init() {
 		// fail if the pass program is not available
 		_, err = exec.LookPath(pass.passcmd)
 		if err != nil {
-			return nil, errors.New("pass program is not available")
+			return nil, fmt.Errorf("%w: pass program is not available", ErrUnavailable)
 		}
 
 		return pass, nil

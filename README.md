@@ -12,6 +12,10 @@ This repository is a permanent, maintained fork of [99designs/keyring](https://g
 
 I originally authored Keyring at 99designs. I'm sad to see the upstream project left unmaintained, so I maintain this fork for ongoing fixes, dependency updates, and platform support. The Go module path for this fork is `github.com/lox/keyring`.
 
+This fork has intentionally diverged from upstream. It uses a different module
+path and a context-aware provider API in the root package, so it is not a
+drop-in replacement for `github.com/99designs/keyring`.
+
 This is not the only maintained continuation of the project. [ByteNess/keyring](https://github.com/ByteNess/keyring/) is also a maintained fork, with its own feature set and maintenance choices.
 
 Currently Keyring supports the following backends
@@ -29,21 +33,63 @@ Currently Keyring supports the following backends
 The short version of how to use keyring is shown below.
 
 ```go
-ring, _ := keyring.Open(keyring.Config{
-  ServiceName: "example",
-})
+ctx := context.Background()
 
-_ = ring.Set(keyring.Item{
+ring, _ := keyring.Open(ctx, keyring.WithServiceName("example"))
+
+_ = ring.Set(ctx, keyring.Item{
 	Key: "foo",
 	Data: []byte("secret-bar"),
 })
 
-i, _ := ring.Get("foo")
+i, _ := ring.Get(ctx, "foo")
 
 fmt.Printf("%s", i.Data)
 ```
 
 For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/lox/keyring)
+
+## Provider API
+
+The root package keeps the built-in desktop backends in this repository while
+making backend selection extensible through explicit provider values and
+OptionFunc configuration.
+
+```go
+ctx := context.Background()
+
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithBackends(keyring.KeychainBackend, keyring.FileBackend),
+	keyring.WithProvider(keyring.FileProvider(
+		keyring.FileDir("/path/to/keyring"),
+		keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+	)),
+)
+if err != nil {
+	log.Fatal(err)
+}
+
+_ = ring.Set(ctx, keyring.Item{
+	Key:  "foo",
+	Data: []byte("secret-bar"),
+})
+```
+
+External providers, such as a future 1Password provider, can live in separate
+modules without adding their dependencies to the core package:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithBackends(onepassword.Backend, keyring.KeychainBackend, keyring.FileBackend),
+	keyring.WithProvider(onepassword.Provider(
+		onepassword.WithVault("Private"),
+	)),
+)
+```
+
+See [docs/api.md](docs/api.md) and the package examples for more detail.
 
 
 ## Testing

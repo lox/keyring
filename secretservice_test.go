@@ -4,6 +4,7 @@
 package keyring
 
 import (
+	"context"
 	"errors"
 	"os"
 	"sort"
@@ -23,7 +24,7 @@ import (
 //  2. It might be possible to make a mock prompter that connects to DBus
 //     and provides the Prompt interface using the go-libsecret library.
 
-func libSecretSetup(t *testing.T) (Keyring, func(t *testing.T)) {
+func libSecretSetup(t *testing.T) (backendKeyring, func(t *testing.T)) {
 	t.Helper()
 	if os.Getenv("GITHUB_ACTIONS") != "" {
 		t.Skip("Skipping testing in CI environment")
@@ -55,16 +56,22 @@ func TestLibSecretOpenFallsBackWhenDBusIsUnavailable(t *testing.T) {
 		newLibSecretService = originalNewService
 	})
 
-	ring, err := Open(Config{
-		AllowedBackends:  []BackendType{SecretServiceBackend, FileBackend},
-		FileDir:          t.TempDir(),
-		FilePasswordFunc: FixedStringPrompt("test password"),
-	})
+	ring, err := Open(context.Background(),
+		WithBackends(SecretServiceBackend, FileBackend),
+		WithProvider(FileProvider(
+			FileDir(t.TempDir()),
+			FilePrompt(FixedStringPrompt("test password")),
+		)),
+	)
 	if err != nil {
 		t.Fatalf("expected file fallback after Secret Service opener failure, got %v", err)
 	}
-	if _, ok := ring.(*fileKeyring); !ok {
-		t.Fatalf("expected *fileKeyring fallback, got %T", ring)
+	adapter, ok := ring.(backendAdapter)
+	if !ok {
+		t.Fatalf("expected backendAdapter, got %T", ring)
+	}
+	if _, ok := adapter.ring.(*fileKeyring); !ok {
+		t.Fatalf("expected *fileKeyring fallback, got %T", adapter.ring)
 	}
 }
 

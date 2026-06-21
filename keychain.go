@@ -18,6 +18,8 @@ const (
 
 var errKeychainUpdateItemNotFound = errors.New("keychain item not found")
 
+var errKeychainSynchronizableWithCustomKeychain = errors.New("keychain synchronizable is not supported with custom keychains")
+
 type keychain struct {
 	path    string
 	service string
@@ -30,7 +32,7 @@ type keychain struct {
 }
 
 func init() {
-	supportedBackends[KeychainBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[KeychainBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		if cfg.KeychainName != "" && cfg.KeychainSynchronizable {
 			return nil, errKeychainSynchronizableWithCustomKeychain
 		}

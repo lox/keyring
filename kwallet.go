@@ -5,6 +5,7 @@ package keyring
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/godbus/dbus"
@@ -20,7 +21,7 @@ func init() {
 		return
 	}
 
-	supportedBackends[KWalletBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[KWalletBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		if cfg.ServiceName == "" {
 			cfg.ServiceName = "kdewallet"
 		}
@@ -35,7 +36,7 @@ func init() {
 
 		wallet, err := newKwalletBinding()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 		}
 
 		ring := &kwalletKeyring{
@@ -45,7 +46,10 @@ func init() {
 			folder: cfg.KWalletFolder,
 		}
 
-		return ring, ring.openWallet()
+		if err := ring.openWallet(); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		}
+		return ring, nil
 	})
 }
 

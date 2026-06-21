@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	supportedBackends[FileBackend] = opener(func(cfg Config) (Keyring, error) {
+	supportedBackends[FileBackend] = opener(func(cfg Config) (backendKeyring, error) {
 		return &fileKeyring{
 			dir:          cfg.FileDir,
 			passwordFunc: cfg.FilePasswordFunc,

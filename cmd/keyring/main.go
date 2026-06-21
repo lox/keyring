@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	serviceName := flag.String("service", "example", "The keyring service to use")
 	keyName := flag.String("key", "example", "The key to use")
 	backend := flag.String("backend", "", "A specific backend to use")
@@ -39,21 +41,21 @@ func main() {
 
 	keyring.Debug = *debug
 
-	var allowedBackends []keyring.BackendType
+	var allowedBackends []keyring.Backend
 	if *backend != "" {
 		if !hasBackend(*backend) {
 			log.Fatalf("Backend %q isn't available. Use -list-backends to see what is.", *backend)
 		}
-		allowedBackends = append(allowedBackends, keyring.BackendType(*backend))
+		allowedBackends = append(allowedBackends, keyring.Backend(*backend))
 	} else {
 		allowedBackends = keyring.AvailableBackends()
 	}
 
-	ring, err := keyring.Open(keyring.Config{
-		ServiceName:     *serviceName,
-		AllowedBackends: allowedBackends,
-		KeychainName:    *keychainName,
-	})
+	ring, err := keyring.Open(ctx,
+		keyring.WithServiceName(*serviceName),
+		keyring.WithBackends(allowedBackends...),
+		keyring.WithProvider(keyring.KeychainProvider(keyring.KeychainName(*keychainName))),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,7 +66,7 @@ func main() {
 			log.Printf("Listing keys in service %q in backend %q",
 				*serviceName, allowedBackends[0])
 		}
-		keys, err := ring.Keys()
+		keys, err := ring.Keys(ctx)
 		if err != nil {
 			log.Fatalf("Failed to list keys: %#v", err)
 		}
@@ -77,7 +79,7 @@ func main() {
 			log.Printf("Setting key %q in service %q in backend %q",
 				*keyName, *serviceName, allowedBackends[0])
 		}
-		err := ring.Set(keyring.Item{
+		err := ring.Set(ctx, keyring.Item{
 			Key:  *keyName,
 			Data: []byte(*actionSetValue),
 		})
@@ -91,7 +93,7 @@ func main() {
 				*keyName, *serviceName, allowedBackends[0])
 		}
 
-		i, err := ring.Get(*keyName)
+		i, err := ring.Get(ctx, *keyName)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -101,7 +103,7 @@ func main() {
 
 func hasBackend(key string) bool {
 	for _, b := range keyring.AvailableBackends() {
-		if keyring.BackendType(key) == b {
+		if keyring.Backend(key) == b {
 			return true
 		}
 	}

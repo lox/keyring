@@ -1,9 +1,11 @@
 package keyring
 
-// Config contains configuration for keyring.
+// Config contains backend-specific configuration used by built-in providers.
+//
+// Deprecated: use Open with Option values and provider-specific options.
 type Config struct {
 	// AllowedBackends is a whitelist of backend providers that can be used. Nil means all available.
-	AllowedBackends []BackendType
+	AllowedBackends []Backend
 
 	// ServiceName is a generic service name that is used by backends that support the concept
 	ServiceName string
