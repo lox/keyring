@@ -1,10 +1,15 @@
 package keyring
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
+	"syscall"
 	"time"
 
 	jose "github.com/dvsekhvalnov/jose2go"
@@ -20,10 +25,29 @@ func init() {
 	})
 }
 
+const fileKeyDir = "_keyring_v1"
+
 var filenameEscape = func(s string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(s))
+}
+
+var filenameUnescape = func(s string) string {
+	raw, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return legacyFilenameUnescape(s)
+	}
+
+	decoded := string(raw)
+	if filenameEscape(decoded) != s {
+		return legacyFilenameUnescape(s)
+	}
+	return decoded
+}
+
+var legacyFilenameEscape = func(s string) string {
 	return percent.Encode(s, "/")
 }
-var filenameUnescape = percent.Decode
+var legacyFilenameUnescape = percent.Decode
 
 type fileKeyring struct {
 	dir          string
@@ -78,9 +102,13 @@ func (k *fileKeyring) Get(key string) (Item, error) {
 	}
 
 	bytes, err := os.ReadFile(filename)
-	if os.IsNotExist(err) {
+	if fileNotFound(err) {
+		bytes, err = k.readLegacy(key)
+	}
+	if fileNotFound(err) {
 		return Item{}, ErrKeyNotFound
-	} else if err != nil {
+	}
+	if err != nil {
 		return Item{}, err
 	}
 
@@ -106,9 +134,13 @@ func (k *fileKeyring) GetMetadata(key string) (Metadata, error) {
 	}
 
 	stat, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if fileNotFound(err) {
+		stat, err = k.statLegacy(key)
+	}
+	if fileNotFound(err) {
 		return Metadata{}, ErrKeyNotFound
-	} else if err != nil {
+	}
+	if err != nil {
 		return Metadata{}, err
 	}
 
@@ -142,6 +174,10 @@ func (k *fileKeyring) Set(i Item) error {
 		return err
 	}
 
+	if _, err := k.storageDir(); err != nil {
+		return err
+	}
+
 	filename, err := k.filename(i.Key)
 	if err != nil {
 		return err
@@ -155,7 +191,52 @@ func (k *fileKeyring) filename(key string) (string, error) {
 		return "", err
 	}
 
-	return filepath.Join(dir, filenameEscape(key)), nil
+	return filepath.Join(dir, fileKeyDir, filenameEscape(key)), nil
+}
+
+func (k *fileKeyring) storageDir() (string, error) {
+	dir, err := k.resolveDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, fileKeyDir)
+
+	info, err := os.Stat(dir)
+	switch {
+	case os.IsNotExist(err):
+		return dir, os.MkdirAll(dir, 0700)
+	case err != nil:
+		return "", err
+	case !info.IsDir():
+		return "", fmt.Errorf("%s is a file, not a directory", dir)
+	}
+
+	return dir, nil
+}
+
+func (k *fileKeyring) legacyFilename(key string) (string, error) {
+	dir, err := k.resolveDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, legacyFilenameEscape(key)), nil
+}
+
+func (k *fileKeyring) readLegacy(key string) ([]byte, error) {
+	filename, err := k.legacyFilename(key)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filename)
+}
+
+func (k *fileKeyring) statLegacy(key string) (os.FileInfo, error) {
+	filename, err := k.legacyFilename(key)
+	if err != nil {
+		return nil, err
+	}
+	return os.Stat(filename)
 }
 
 func (k *fileKeyring) Remove(key string) error {
@@ -164,13 +245,44 @@ func (k *fileKeyring) Remove(key string) error {
 		return err
 	}
 
-	if err := os.Remove(filename); os.IsNotExist(err) {
-		return ErrKeyNotFound
-	} else if err != nil {
+	err = os.Remove(filename)
+	legacyErr := k.removeLegacy(key)
+
+	if (err == nil || fileNotFound(err)) && (legacyErr == nil || fileNotFound(legacyErr)) {
+		if fileNotFound(err) && fileNotFound(legacyErr) {
+			return ErrKeyNotFound
+		}
+		return nil
+	}
+	if err != nil && !fileNotFound(err) {
 		return err
 	}
+	return legacyErr
+}
 
-	return nil
+func (k *fileKeyring) removeLegacy(key string) error {
+	filename, err := k.legacyFilename(key)
+	if err != nil {
+		return err
+	}
+	return os.Remove(filename)
+}
+
+func fileNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if os.IsNotExist(err) {
+		return true
+	}
+	var errno syscall.Errno
+	if !errors.As(err, &errno) {
+		return false
+	}
+	if errno == syscall.ENOTDIR {
+		return true
+	}
+	return runtime.GOOS == "windows" && errno == syscall.Errno(0x7B)
 }
 
 func (k *fileKeyring) Keys() ([]string, error) {
@@ -179,14 +291,56 @@ func (k *fileKeyring) Keys() ([]string, error) {
 		return nil, err
 	}
 
-	var keys = []string{}
+	var keys []string
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range files {
+		if f.IsDir() && f.Name() == fileKeyDir {
+			continue
+		}
+		keys = append(keys, legacyFilenameUnescape(f.Name()))
+	}
+
+	storageDir := filepath.Join(dir, fileKeyDir)
+	info, err := os.Stat(storageDir)
+	if fileNotFound(err) {
+		sort.Strings(keys)
+		return dedupeSortedStrings(keys), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		sort.Strings(keys)
+		return dedupeSortedStrings(keys), nil
+	}
+
+	files, err = os.ReadDir(storageDir)
+	if os.IsNotExist(err) {
+		err = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
 		keys = append(keys, filenameUnescape(f.Name()))
 	}
 
-	return keys, nil
+	sort.Strings(keys)
+	return dedupeSortedStrings(keys), nil
+}
+
+func dedupeSortedStrings(values []string) []string {
+	out := values[:0]
+	for _, value := range values {
+		if len(out) == 0 || out[len(out)-1] != value {
+			out = append(out, value)
+		}
+	}
+	return out
 }
