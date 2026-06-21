@@ -12,6 +12,10 @@ This repository is a permanent, maintained fork of [99designs/keyring](https://g
 
 I originally authored Keyring at 99designs. I'm sad to see the upstream project left unmaintained, so I maintain this fork for ongoing fixes, dependency updates, and platform support. The Go module path for this fork is `github.com/lox/keyring`.
 
+This fork has intentionally diverged from upstream. It uses a different module
+path and a context-aware provider API in the root package, so it is not a
+drop-in replacement for `github.com/99designs/keyring`.
+
 This is not the only maintained continuation of the project. [ByteNess/keyring](https://github.com/ByteNess/keyring/) is also a maintained fork, with its own feature set and maintenance choices.
 
 Currently Keyring supports the following backends
