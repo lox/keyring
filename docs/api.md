@@ -27,6 +27,34 @@ If `WithBackends` is not provided, `Open` tries the built-in providers that are
 available on the current platform in the package's default order. Additional
 providers can be added with `WithProvider` or `WithProviders`.
 
+## Migrating From Config
+
+Old callers opened keyrings with `keyring.Open(keyring.Config{...})`. New
+callers pass `context.Context` plus options:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("aws-vault"),
+	keyring.WithBackends(keyring.KeychainBackend, keyring.FileBackend),
+	keyring.WithProvider(keyring.KeychainProvider(
+		keyring.KeychainName("aws-vault"),
+		keyring.KeychainTrustApplication(true),
+	)),
+	keyring.WithProvider(keyring.FileProvider(
+		keyring.FileDir("~/.awsvault/keys/"),
+		keyring.FilePrompt(fileKeyringPassphrasePrompt),
+	)),
+)
+```
+
+The mechanical mapping is:
+
+- `Config.ServiceName` -> `WithServiceName`
+- `Config.AllowedBackends` -> `WithBackends`
+- backend-specific `Config` fields -> the matching built-in provider options
+- `ring.Get(key)` / `ring.Set(item)` / `ring.Keys()` -> pass `ctx` as the first argument
+- `ring.GetMetadata(key)` -> use `MetadataReader` when the opened keyring supports it
+
 ## Interfaces
 
 The core interface is context-aware and intentionally small:
