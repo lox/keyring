@@ -96,7 +96,6 @@ type MetadataReader interface {
 // OpenOptions are the provider-visible options selected by Open.
 type OpenOptions struct {
 	ServiceName string
-	Backends    []Backend
 }
 
 // Provider describes a backend implementation.
@@ -163,7 +162,6 @@ func Open(ctx context.Context, opts ...Option) (Keyring, error) {
 
 	openOptions := OpenOptions{
 		ServiceName: cfg.serviceName,
-		Backends:    append([]Backend(nil), backends...),
 	}
 
 	var unavailable error
