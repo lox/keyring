@@ -244,6 +244,42 @@ func TestOpenStopsOnNonUnavailableByDefault(t *testing.T) {
 	}
 }
 
+func TestBuiltinProviderStopsOnNonUnavailableOpenError(t *testing.T) {
+	backend := Backend("test-builtin-open-error")
+	errOpen := errors.New("bad config")
+	calledFallback := false
+
+	oldOpener, hadOpener := supportedBackends[backend]
+	supportedBackends[backend] = func(Config) (backendKeyring, error) {
+		return nil, errOpen
+	}
+	t.Cleanup(func() {
+		if hadOpener {
+			supportedBackends[backend] = oldOpener
+			return
+		}
+		delete(supportedBackends, backend)
+	})
+
+	_, err := Open(context.Background(),
+		WithBackends(backend, testExternalBackend),
+		WithProvider(builtinProvider(backend, nil)),
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
+				calledFallback = true
+				return newArrayKeyring(ctx, nil), nil
+			},
+		}),
+	)
+	if !errors.Is(err, errOpen) {
+		t.Fatalf("expected opener error, got %v", err)
+	}
+	if calledFallback {
+		t.Fatal("expected non-unavailable opener error to stop fallback")
+	}
+}
+
 func TestOpenCanFallbackOnAnyError(t *testing.T) {
 	ring, err := Open(context.Background(),
 		WithFallbackPolicy(FallbackOnError),

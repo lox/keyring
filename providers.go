@@ -2,7 +2,6 @@ package keyring
 
 import (
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -280,10 +279,7 @@ func builtinProvider(backend Backend, apply func(*Config)) Provider {
 
 			ring, err := opener(cfg)
 			if err != nil {
-				if errors.Is(err, errKeychainSynchronizableWithCustomKeychain) {
-					return nil, err
-				}
-				return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+				return nil, err
 			}
 
 			return backendAdapter{ring: ring}, nil

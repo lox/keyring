@@ -63,6 +63,9 @@ func init() {
 
 		parent, err := getKeyringForScope(cfg.KeyCtlScope)
 		if err != nil {
+			if cfg.KeyCtlScope == "" {
+				return nil, fmt.Errorf("%w: accessing %q keyring failed: %v", ErrUnavailable, cfg.KeyCtlScope, err)
+			}
 			return nil, fmt.Errorf("accessing %q keyring failed: %v", cfg.KeyCtlScope, err)
 		}
 
