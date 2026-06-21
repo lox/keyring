@@ -4,7 +4,8 @@ Keyring
 [![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/lox/keyring/actions/workflows/test.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/lox/keyring.svg)](https://pkg.go.dev/github.com/lox/keyring)
 
-Keyring provides a common interface to a range of secure credential storage services.
+Keyring provides a context-aware provider API for secure credential storage
+services.
 
 ## Maintained fork status
 
@@ -27,6 +28,15 @@ Currently Keyring supports the following backends
  * [Encrypted file (JWT)](https://datatracker.ietf.org/doc/html/rfc7519)
  * [KeyCtl](https://linux.die.net/man/1/keyctl)
 
+## Code map
+
+The main paths are:
+
+* [keyring.go](keyring.go) - public `Open`, `Keyring`, `Provider`, backend order, fallback, and stable errors
+* [providers.go](providers.go) - built-in provider constructors such as `FileProvider`, `KeychainProvider`, and `PassProvider`
+* [file.go](file.go) - encrypted file backend storage, portable filenames, and legacy filename reads/removes
+* [adapter.go](adapter.go) - adapter from the older backend implementations to the context-aware root API
+* [docs/api.md](docs/api.md) - migration notes and provider examples
 
 ## Usage
 
@@ -90,6 +100,34 @@ ring, err := keyring.Open(ctx,
 ```
 
 See [docs/api.md](docs/api.md) and the package examples for more detail.
+
+## Encrypted file backend
+
+The file backend is built into this repository. Use it for headless, container,
+or agent environments where an OS keychain is unavailable or too interactive:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithBackends(keyring.FileBackend),
+	keyring.WithProvider(keyring.FileProvider(
+		keyring.FileDir("/path/to/keyring"),
+		keyring.FilePrompt(keyring.FixedStringPrompt(passphrase)),
+	)),
+)
+```
+
+The backend stores one encrypted file per item under an internal directory in
+`FileDir`. Filenames are encoded so application keys containing characters such
+as `/`, `:`, `<`, `>`, `?`, or `*` remain portable across platforms. Existing
+root-level files written by older versions are still read, listed, and removed
+through the legacy filename path.
+
+Applications still own their runtime policy: where the directory lives, how the
+passphrase is supplied, whether to force the file backend in headless mode, and
+whether to add app-level locking or timeouts. The provider API lets applications
+wrap `FileProvider` for those policies without reimplementing encrypted file
+storage; [provider_test.go](provider_test.go) includes a small wrapper example.
 
 
 ## Testing

@@ -92,8 +92,33 @@ A provider with the same backend name as a built-in backend replaces that
 built-in provider for the current `Open` call. That lets applications wrap or
 specialize built-in behavior without changing the core library.
 
-For example, an application can make the file backend apply its own key
-encoding, locking, or timeout policy:
+## File Backend
+
+The encrypted file backend is a built-in provider:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("gog"),
+	keyring.WithBackends(keyring.FileBackend),
+	keyring.WithProvider(keyring.FileProvider(
+		keyring.FileDir(keyringDir),
+		keyring.FilePrompt(keyring.FixedStringPrompt(passphrase)),
+	)),
+)
+```
+
+`file.go` owns the encrypted file storage. It writes one encrypted file per item
+under an internal directory, encodes filenames so application keys are portable
+across platforms, and continues to read, list, and remove older root-level files
+written with the previous filename format.
+
+Applications own the policy around that storage: environment variables,
+interactive prompting, headless detection, service-specific key naming, locking,
+and operation timeouts. If an application needs those policies, wrap the built-in
+provider for the current `Open` call instead of copying the file backend.
+
+For example, an application can add locking, timeouts, metrics, or migration
+logic around the built-in file backend:
 
 ```go
 rawFile := keyring.FileProvider(
@@ -108,7 +133,7 @@ appFile := keyring.Provider{
 		if err != nil {
 			return nil, err
 		}
-		return wrapFileKeys(ring), nil
+		return withFilePolicy(ring), nil
 	},
 }
 ```
