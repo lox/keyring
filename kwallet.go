@@ -47,6 +47,7 @@ func init() {
 		}
 
 		if err := ring.openWallet(); err != nil {
+			_ = ring.Close()
 			return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 		}
 		return ring, nil
@@ -158,22 +159,35 @@ func (k *kwalletKeyring) Keys() ([]string, error) {
 	return entries, nil
 }
 
+func (k *kwalletKeyring) Close() error {
+	return k.wallet.Close()
+}
+
 var newKwalletBinding = newKwallet
 
 func newKwallet() (*kwalletBinding, error) {
-	conn, err := dbus.SessionBus()
+	conn, err := newPrivateSessionBus()
 	if err != nil {
 		return nil, err
 	}
 
 	return &kwalletBinding{
-		conn.Object(dbusServiceName, dbusPath),
+		dbus:      conn.Object(dbusServiceName, dbusPath),
+		closeFunc: conn.Close,
 	}, nil
 }
 
 // Dumb Dbus bindings for kwallet bindings with types.
 type kwalletBinding struct {
-	dbus dbus.BusObject
+	dbus      dbus.BusObject
+	closeFunc func() error
+}
+
+func (k *kwalletBinding) Close() error {
+	if k.closeFunc == nil {
+		return nil
+	}
+	return k.closeFunc()
 }
 
 // method bool org.kde.KWallet.isOpen(int handle)

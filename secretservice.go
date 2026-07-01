@@ -9,11 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/gsterjov/go-libsecret"
 )
 
-var newLibSecretService = libsecret.NewService
+var newLibSecretService = newSecretService
 
 func init() {
 	supportedBackends[SecretServiceBackend] = opener(func(cfg Config) (backendKeyring, error) {
@@ -35,6 +33,7 @@ func init() {
 		}
 
 		if err := ring.openSecrets(); err != nil {
+			_ = ring.Close()
 			return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 		}
 		return ring, nil
@@ -43,9 +42,9 @@ func init() {
 
 type secretsKeyring struct {
 	name       string
-	service    *libsecret.Service
-	collection *libsecret.Collection
-	session    *libsecret.Session
+	service    *secretService
+	collection *secretCollection
+	session    *secretSession
 }
 
 var errCollectionNotFound = errors.New("collection does not exist, please add a key first")
@@ -85,7 +84,7 @@ func (k *secretsKeyring) openSecrets() error {
 		return err
 	}
 
-	path := libsecret.DBusPath + "/collection/" + k.name
+	path := secretServiceDBusPath + "/collection/" + k.name
 
 	for _, collection := range collections {
 		if decodeKeyringString(string(collection.Path())) == path {
@@ -160,16 +159,25 @@ func (k *secretsKeyring) Get(key string) (Item, error) {
 	return ret, err
 }
 
-// GetMetadata for libsecret returns an error indicating that it's unsupported
-// for this backend.
+// GetMetadata for Secret Service returns an error indicating that it's
+// unsupported for this backend.
 //
-// libsecret actually implements a metadata system which we could use, "Secret
-// Attributes"; I found no indication in documentation of anything like an
-// automatically maintained last-modification timestamp, so to use this we'd
-// need to have a SetMetadata API too.  Which we're not yet doing, but feel
-// free to contribute patches.
+// Secret Service has item attributes, but no automatically maintained
+// last-modification timestamp. To use those attributes, this package would need
+// a SetMetadata API too.
 func (k *secretsKeyring) GetMetadata(_ string) (Metadata, error) {
 	return Metadata{}, ErrMetadataNeedsCredentials
+}
+
+func (k *secretsKeyring) Close() error {
+	if k.service == nil {
+		return nil
+	}
+	err := k.service.Close()
+	k.service = nil
+	k.collection = nil
+	k.session = nil
+	return err
 }
 
 func (k *secretsKeyring) Set(item Item) error {
@@ -198,7 +206,7 @@ func (k *secretsKeyring) Set(item Item) error {
 		return err
 	}
 
-	secret := libsecret.NewSecret(k.session, []byte{}, data, "application/json")
+	secret := newSecret(k.session, []byte{}, data, "application/json")
 
 	if _, err := k.collection.CreateItem(item.Key, secret, true); err != nil {
 		return err
@@ -207,7 +215,7 @@ func (k *secretsKeyring) Set(item Item) error {
 	return nil
 }
 
-func firstSecretServiceItem(items []libsecret.Item) (*libsecret.Item, error) {
+func firstSecretServiceItem(items []secretItem) (*secretItem, error) {
 	if len(items) == 0 {
 		return nil, ErrKeyNotFound
 	}

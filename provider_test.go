@@ -140,6 +140,16 @@ func TestOpenCanWrapBuiltinFileBackend(t *testing.T) {
 	}
 }
 
+func TestBackendAdapterClosesBackend(t *testing.T) {
+	backend := &testClosingBackend{}
+	if err := (backendAdapter{ring: backend}).Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !backend.closed {
+		t.Fatal("expected adapter to close backend")
+	}
+}
+
 func TestOpenFallsBackWhenFileProviderIsNotConfigured(t *testing.T) {
 	ctx := context.Background()
 
@@ -158,6 +168,35 @@ func TestOpenFallsBackWhenFileProviderIsNotConfigured(t *testing.T) {
 	if ring == nil {
 		t.Fatal("expected fallback ring")
 	}
+}
+
+type testClosingBackend struct {
+	closed bool
+}
+
+func (k *testClosingBackend) Get(string) (Item, error) {
+	return Item{}, ErrNotFound
+}
+
+func (k *testClosingBackend) GetMetadata(string) (Metadata, error) {
+	return Metadata{}, ErrMetadataUnsupported
+}
+
+func (k *testClosingBackend) Set(Item) error {
+	return nil
+}
+
+func (k *testClosingBackend) Remove(string) error {
+	return nil
+}
+
+func (k *testClosingBackend) Keys() ([]string, error) {
+	return nil, nil
+}
+
+func (k *testClosingBackend) Close() error {
+	k.closed = true
+	return nil
 }
 
 func TestOpenRejectsFileProviderWithoutPrompt(t *testing.T) {

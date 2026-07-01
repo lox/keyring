@@ -79,11 +79,12 @@ strings, ignore confusing failures, or avoid the backend entirely.
    separate macOS follow-ups because they may require ACL or item-label changes.
 
 2. **Secret Service DBus lifecycle.**
-   Stop the Linux DBus-backed backends from opening DBus/libsecret resources
-   from package initialization. Use lazy opener-time probing so importing
-   keyring or using a different backend does not autostart DBus. Do not add a
-   `Close` method for this slice: the current DBus calls use godbus' shared
-   `SessionBus`, whose own docs say callers must not close it.
+   Stop the Linux DBus-backed backends from opening DBus resources from package
+   initialization. Use lazy opener-time probing so importing keyring or using a
+   different backend does not autostart DBus. A later follow-up switched the
+   Linux DBus backends to private session-bus connections and optional
+   `io.Closer` cleanup, so callers can release those resources when they are
+   done with a keyring.
 
 3. **Secret Service consistency pass.**
    Tighten empty-state and collection lookup behavior so Secret Service behaves

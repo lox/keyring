@@ -79,7 +79,8 @@ type Metadata struct {
 	ModificationTime time.Time
 }
 
-// Keyring provides the common credential storage interface.
+// Keyring provides the common credential storage interface. Keyrings that own
+// external resources may also implement io.Closer.
 type Keyring interface {
 	Get(context.Context, string) (Item, error)
 	Set(context.Context, Item) error

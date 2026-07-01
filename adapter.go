@@ -1,6 +1,9 @@
 package keyring
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 type backendAdapter struct {
 	ring backendKeyring
@@ -51,4 +54,12 @@ func (k backendAdapter) Metadata(ctx context.Context, key string) (Metadata, err
 		return Metadata{}, mapError(err)
 	}
 	return metadata, nil
+}
+
+func (k backendAdapter) Close() error {
+	closer, ok := k.ring.(io.Closer)
+	if !ok {
+		return nil
+	}
+	return closer.Close()
 }
