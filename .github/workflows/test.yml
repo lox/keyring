@@ -29,10 +29,4 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
-      - name: Install Linux integration dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pass gnome-keyring dbus-x11
-      - name: Install macOS integration dependencies
-        if: runner.os == 'macOS'
-        run: brew install pass gnupg
       - run: go test -race ./...

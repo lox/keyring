@@ -2,7 +2,7 @@ Keyring
 =======
 [![Maintained fork](https://img.shields.io/badge/maintained%20fork-lox%2Fkeyring-007d9c)](https://github.com/lox/keyring)
 [![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/lox/keyring/actions/workflows/test.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/lox/keyring.svg)](https://pkg.go.dev/github.com/lox/keyring)
+[![Go Reference](https://pkg.go.dev/badge/github.com/lox/keyring/v2.svg)](https://pkg.go.dev/github.com/lox/keyring/v2)
 
 Keyring provides a context-aware provider API for secure credential storage
 services.
@@ -11,7 +11,7 @@ services.
 
 This repository is a permanent, maintained fork of [99designs/keyring](https://github.com/99designs/keyring). The upstream project appears to be abandoned; its [maintenance status has been asked about upstream](https://github.com/99designs/keyring/issues/138), but the project remains without active stewardship there.
 
-I originally authored Keyring at 99designs. I'm sad to see the upstream project left unmaintained, so I maintain this fork for ongoing fixes, dependency updates, and platform support. The Go module path for this fork is `github.com/lox/keyring`.
+I originally authored Keyring at 99designs. I'm sad to see the upstream project left unmaintained, so I maintain this fork for ongoing fixes, dependency updates, and platform support. The Go module path for this fork is `github.com/lox/keyring/v2`.
 
 This fork has intentionally diverged from upstream. It uses a different module
 path and a context-aware provider API in the root package, so it is not a
@@ -19,23 +19,17 @@ drop-in replacement for `github.com/99designs/keyring`.
 
 This is not the only maintained continuation of the project. [ByteNess/keyring](https://github.com/ByteNess/keyring/) is also a maintained fork, with its own feature set and maintenance choices.
 
-Currently Keyring supports the following backends
- * [macOS Keychain](https://support.apple.com/en-au/guide/keychain-access/welcome/mac)
- * [Windows Credential Manager](https://support.microsoft.com/en-au/help/4026814/windows-accessing-credential-manager)
- * Secret Service ([Gnome Keyring](https://wiki.gnome.org/Projects/GnomeKeyring), [KWallet](https://kde.org/applications/system/org.kde.kwalletmanager5))
- * [KWallet](https://kde.org/applications/system/org.kde.kwalletmanager5)
- * [Pass](https://www.passwordstore.org/)
- * [Encrypted file (JWT)](https://datatracker.ietf.org/doc/html/rfc7519)
- * [KeyCtl](https://linux.die.net/man/1/keyctl)
+The core module includes the encrypted file backend. OS and command-backed
+providers can be published as separate modules instead of adding their
+dependencies here.
 
 ## Code map
 
 The main paths are:
 
-* [keyring.go](keyring.go) - public `Open`, `Keyring`, `Provider`, backend order, fallback, and stable errors
-* [providers.go](providers.go) - built-in provider constructors such as `FileProvider`, `KeychainProvider`, and `PassProvider`
+* [keyring.go](keyring.go) - public `Open`, `Keyring`, `Provider`, fallback, and stable errors
+* [providers.go](providers.go) - built-in file provider constructor
 * [file.go](file.go) - encrypted file backend storage, portable filenames, and legacy filename reads/removes
-* [adapter.go](adapter.go) - adapter from the older backend implementations to the context-aware root API
 * [docs/api.md](docs/api.md) - migration notes and provider examples
 
 ## Usage
@@ -45,7 +39,13 @@ The short version of how to use keyring is shown below.
 ```go
 ctx := context.Background()
 
-ring, _ := keyring.Open(ctx, keyring.WithServiceName("example"))
+ring, _ := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithProvider(keyring.FileProvider(
+		keyring.FileDir("/path/to/keyring"),
+		keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+	)),
+)
 
 _ = ring.Set(ctx, keyring.Item{
 	Key: "foo",
@@ -57,24 +57,25 @@ i, _ := ring.Get(ctx, "foo")
 fmt.Printf("%s", i.Data)
 ```
 
-For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/lox/keyring)
+For more detail on the API please check [the keyring package docs](https://pkg.go.dev/github.com/lox/keyring/v2)
 
 ## Provider API
 
-The root package keeps the built-in desktop backends in this repository while
-making backend selection extensible through explicit provider values and
-OptionFunc configuration.
+The root package keeps the shared API and file backend in this repository while
+desktop and command-backed providers live in their own modules.
 
 ```go
 ctx := context.Background()
 
 ring, err := keyring.Open(ctx,
 	keyring.WithServiceName("example"),
-	keyring.WithBackends(keyring.KeychainBackend, keyring.FileBackend),
-	keyring.WithProvider(keyring.FileProvider(
-		keyring.FileDir("/path/to/keyring"),
-		keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
-	)),
+	keyring.WithProviders(
+		keychain.Provider(),
+		keyring.FileProvider(
+			keyring.FileDir("/path/to/keyring"),
+			keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+		),
+	),
 )
 if err != nil {
 	log.Fatal(err)
@@ -86,16 +87,20 @@ _ = ring.Set(ctx, keyring.Item{
 })
 ```
 
-External providers, such as a future 1Password provider, can live in separate
-modules without adding their dependencies to the core package:
+External providers can live in separate modules without adding their
+dependencies to the core package:
 
 ```go
 ring, err := keyring.Open(ctx,
 	keyring.WithServiceName("example"),
-	keyring.WithBackends(onepassword.Backend, keyring.KeychainBackend, keyring.FileBackend),
-	keyring.WithProvider(onepassword.Provider(
-		onepassword.WithVault("Private"),
-	)),
+	keyring.WithProviders(
+		onepassword.Provider(onepassword.WithVault("Private")),
+		keychain.Provider(),
+		keyring.FileProvider(
+			keyring.FileDir("/path/to/keyring"),
+			keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+		),
+	),
 )
 ```
 
@@ -140,8 +145,6 @@ go test -race ./...
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ```
-
-The `pass` integration tests require `pass` and `gpg`; they are skipped when those tools are not installed. Secret Service tests require an interactive DBus-backed desktop session and are skipped in GitHub Actions.
 
 [Vagrant](https://www.vagrantup.com/) can still be used to create linux and windows test environments.
 

@@ -1,6 +1,7 @@
 package keyring
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -17,11 +18,11 @@ func TestFileKeyringSetWhenEmpty(t *testing.T) {
 	}
 	item := Item{Key: "llamas", Data: []byte("llamas are great")}
 
-	if err := k.Set(item); err != nil {
+	if err := k.Set(context.Background(), item); err != nil {
 		t.Fatal(err)
 	}
 
-	foundItem, err := k.Get("llamas")
+	foundItem, err := k.Get(context.Background(), "llamas")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,11 +44,11 @@ func TestFileKeyringGetWithSlashes(t *testing.T) {
 
 	item := Item{Key: "https://aws-sso-portal.awsapps.com/start", Data: []byte("https://aws-sso-portal.awsapps.com/start")}
 
-	if err := k.Set(item); err != nil {
+	if err := k.Set(context.Background(), item); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := k.Remove(item.Key); err != nil {
+	if err := k.Remove(context.Background(), item.Key); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -60,7 +61,7 @@ func TestFileKeyringUsesPortableFilenames(t *testing.T) {
 	}
 
 	key := `token:default:user@example.com/<>:"\|?*%`
-	if err := k.Set(Item{Key: key, Data: []byte("secret")}); err != nil {
+	if err := k.Set(context.Background(), Item{Key: key, Data: []byte("secret")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +87,7 @@ func TestFileKeyringUsesPortableFilenames(t *testing.T) {
 		t.Fatalf("keyring filename %q contains a reserved character", name)
 	}
 
-	foundItem, err := k.Get(key)
+	foundItem, err := k.Get(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestFileKeyringUsesPortableFilenames(t *testing.T) {
 		t.Fatalf("unexpected item: key=%q data=%q", foundItem.Key, foundItem.Data)
 	}
 
-	keys, err := k.Keys()
+	keys, err := k.Keys(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestFileKeyringReadsLegacyFilenames(t *testing.T) {
 
 	writeLegacyFile(t, k, Item{Key: key, Data: []byte("legacy")})
 
-	foundItem, err := k.Get(key)
+	foundItem, err := k.Get(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,11 +121,11 @@ func TestFileKeyringReadsLegacyFilenames(t *testing.T) {
 		t.Fatalf("unexpected legacy item: key=%q data=%q", foundItem.Key, foundItem.Data)
 	}
 
-	if _, err := k.GetMetadata(key); err != nil {
+	if _, err := k.Metadata(context.Background(), key); err != nil {
 		t.Fatal(err)
 	}
 
-	keys, err := k.Keys()
+	keys, err := k.Keys(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,12 +141,12 @@ func TestFileKeyringRemovesLegacyAndPortableFilenames(t *testing.T) {
 	}
 	key := `token/default/user@example.com`
 
-	if err := k.Set(Item{Key: key, Data: []byte("portable")}); err != nil {
+	if err := k.Set(context.Background(), Item{Key: key, Data: []byte("portable")}); err != nil {
 		t.Fatal(err)
 	}
 	writeLegacyFile(t, k, Item{Key: key, Data: []byte("legacy")})
 
-	keys, err := k.Keys()
+	keys, err := k.Keys(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestFileKeyringRemovesLegacyAndPortableFilenames(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := k.Remove(key); err != nil {
+	if err := k.Remove(context.Background(), key); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filename); !os.IsNotExist(err) {
@@ -171,7 +172,7 @@ func TestFileKeyringRemovesLegacyAndPortableFilenames(t *testing.T) {
 	if _, err := os.Stat(legacyFilename); !os.IsNotExist(err) {
 		t.Fatalf("expected legacy filename removed, got %v", err)
 	}
-	if err := k.Remove(key); err != ErrKeyNotFound {
+	if err := k.Remove(context.Background(), key); err != ErrKeyNotFound {
 		t.Fatalf("expected ErrKeyNotFound after removing both files, got %v", err)
 	}
 }
@@ -185,11 +186,11 @@ func TestFileKeyringLegacyFilenameDoesNotCollideWithPortableFilename(t *testing.
 	newKey := "portable"
 	legacyKey := filenameEscape(newKey)
 	writeLegacyFile(t, k, Item{Key: legacyKey, Data: []byte("legacy")})
-	if err := k.Set(Item{Key: newKey, Data: []byte("portable")}); err != nil {
+	if err := k.Set(context.Background(), Item{Key: newKey, Data: []byte("portable")}); err != nil {
 		t.Fatal(err)
 	}
 
-	newItem, err := k.Get(newKey)
+	newItem, err := k.Get(context.Background(), newKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func TestFileKeyringLegacyFilenameDoesNotCollideWithPortableFilename(t *testing.
 		t.Fatalf("unexpected portable item: key=%q data=%q", newItem.Key, newItem.Data)
 	}
 
-	legacyItem, err := k.Get(legacyKey)
+	legacyItem, err := k.Get(context.Background(), legacyKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +206,7 @@ func TestFileKeyringLegacyFilenameDoesNotCollideWithPortableFilename(t *testing.
 		t.Fatalf("unexpected legacy item: key=%q data=%q", legacyItem.Key, legacyItem.Data)
 	}
 
-	keys, err := k.Keys()
+	keys, err := k.Keys(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestFileKeyringLegacyNamespaceFileStillReadable(t *testing.T) {
 
 	writeLegacyFile(t, k, Item{Key: fileKeyDir, Data: []byte("legacy")})
 
-	item, err := k.Get(fileKeyDir)
+	item, err := k.Get(context.Background(), fileKeyDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestFileKeyringLegacyNamespaceFileStillReadable(t *testing.T) {
 		t.Fatalf("unexpected legacy namespace item: key=%q data=%q", item.Key, item.Data)
 	}
 
-	keys, err := k.Keys()
+	keys, err := k.Keys(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,10 +239,10 @@ func TestFileKeyringLegacyNamespaceFileStillReadable(t *testing.T) {
 		t.Fatalf("expected legacy namespace key, got %v", keys)
 	}
 
-	if err := k.Remove(fileKeyDir); err != nil {
+	if err := k.Remove(context.Background(), fileKeyDir); err != nil {
 		t.Fatal(err)
 	}
-	if err := k.Set(Item{Key: "new", Data: []byte("portable")}); err != nil {
+	if err := k.Set(context.Background(), Item{Key: "new", Data: []byte("portable")}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -252,7 +253,7 @@ func TestFileKeyringRemoveWhenEmpty(t *testing.T) {
 		passwordFunc: FixedStringPrompt("no more secrets"),
 	}
 
-	err := k.Remove("no-such-key")
+	err := k.Remove(context.Background(), "no-such-key")
 	if err != ErrKeyNotFound {
 		t.Fatalf("expected ErrKeyNotFound, got: %v", err)
 	}
@@ -269,7 +270,7 @@ func TestFileKeyringRejectsFileDir(t *testing.T) {
 		passwordFunc: FixedStringPrompt("no more secrets"),
 	}
 
-	if _, err := k.Keys(); err == nil {
+	if _, err := k.Keys(context.Background()); err == nil {
 		t.Fatal("expected file keyring to reject a file path")
 	}
 }

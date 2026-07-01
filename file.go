@@ -1,6 +1,7 @@
 package keyring
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,21 +16,6 @@ import (
 	jose "github.com/dvsekhvalnov/jose2go"
 	"github.com/mtibben/percent"
 )
-
-func init() {
-	supportedBackends[FileBackend] = opener(func(cfg Config) (backendKeyring, error) {
-		if cfg.FileDir == "" {
-			return nil, fmt.Errorf("%w: file backend requires FileDir", ErrUnavailable)
-		}
-		if cfg.FilePasswordFunc == nil {
-			return nil, fmt.Errorf("%w: file backend requires FilePasswordFunc", ErrInvalidOption)
-		}
-		return &fileKeyring{
-			dir:          cfg.FileDir,
-			passwordFunc: cfg.FilePasswordFunc,
-		}, nil
-	})
-}
 
 const fileKeyDir = "_keyring_v1"
 
@@ -59,6 +45,41 @@ type fileKeyring struct {
 	dir          string
 	passwordFunc PromptFunc
 	password     string
+}
+
+func (k *fileKeyring) Get(ctx context.Context, key string) (Item, error) {
+	if err := ctx.Err(); err != nil {
+		return Item{}, err
+	}
+	return k.get(key)
+}
+
+func (k *fileKeyring) Set(ctx context.Context, item Item) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return k.set(item)
+}
+
+func (k *fileKeyring) Remove(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return k.remove(key)
+}
+
+func (k *fileKeyring) Keys(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return k.keys()
+}
+
+func (k *fileKeyring) Metadata(ctx context.Context, key string) (Metadata, error) {
+	if err := ctx.Err(); err != nil {
+		return Metadata{}, err
+	}
+	return k.metadata(key)
 }
 
 func (k *fileKeyring) resolveDir() (string, error) {
@@ -101,7 +122,7 @@ func (k *fileKeyring) unlock() error {
 	return nil
 }
 
-func (k *fileKeyring) Get(key string) (Item, error) {
+func (k *fileKeyring) get(key string) (Item, error) {
 	filename, err := k.filename(key)
 	if err != nil {
 		return Item{}, err
@@ -133,7 +154,7 @@ func (k *fileKeyring) Get(key string) (Item, error) {
 	return decoded, err
 }
 
-func (k *fileKeyring) GetMetadata(key string) (Metadata, error) {
+func (k *fileKeyring) metadata(key string) (Metadata, error) {
 	filename, err := k.filename(key)
 	if err != nil {
 		return Metadata{}, err
@@ -162,7 +183,7 @@ func (k *fileKeyring) GetMetadata(key string) (Metadata, error) {
 	}, nil
 }
 
-func (k *fileKeyring) Set(i Item) error {
+func (k *fileKeyring) set(i Item) error {
 	bytes, err := json.Marshal(i)
 	if err != nil {
 		return err
@@ -245,7 +266,7 @@ func (k *fileKeyring) statLegacy(key string) (os.FileInfo, error) {
 	return os.Stat(filename)
 }
 
-func (k *fileKeyring) Remove(key string) error {
+func (k *fileKeyring) remove(key string) error {
 	filename, err := k.filename(key)
 	if err != nil {
 		return err
@@ -291,7 +312,7 @@ func fileNotFound(err error) bool {
 	return runtime.GOOS == "windows" && errno == syscall.Errno(0x7B)
 }
 
-func (k *fileKeyring) Keys() ([]string, error) {
+func (k *fileKeyring) keys() ([]string, error) {
 	dir, err := k.resolveDir()
 	if err != nil {
 		return nil, err

@@ -1,5 +1,5 @@
-// Package keyring provides a context-aware API over desktop credential storage
-// backends.
+// Package keyring provides a context-aware API over credential storage
+// providers.
 package keyring
 
 import (
@@ -17,7 +17,7 @@ type Backend string
 // API.
 type BackendType = Backend
 
-// All currently supported secure storage backends.
+// Well-known backend names.
 const (
 	InvalidBackend       Backend = ""
 	SecretServiceBackend Backend = "secret-service"
@@ -28,36 +28,6 @@ const (
 	FileBackend          Backend = "file"
 	PassBackend          Backend = "pass"
 )
-
-// This order makes sure the OS-specific backends are picked over the more
-// generic backends.
-var backendOrder = []Backend{
-	// Windows
-	WinCredBackend,
-	// MacOS
-	KeychainBackend,
-	// Linux
-	SecretServiceBackend,
-	KWalletBackend,
-	KeyCtlBackend,
-	// General
-	PassBackend,
-	FileBackend,
-}
-
-var supportedBackends = map[Backend]backendOpener{}
-
-type backendOpener func(cfg Config) (backendKeyring, error)
-
-type opener = backendOpener
-
-type backendKeyring interface {
-	Get(string) (Item, error)
-	GetMetadata(string) (Metadata, error)
-	Set(Item) error
-	Remove(string) error
-	Keys() ([]string, error)
-}
 
 // Item is a credential stored in a keyring.
 type Item struct {
@@ -146,7 +116,7 @@ var ErrMetadataNeedsCredentials = ErrMetadataNeedsUnlock
 // ErrMetadataNotSupported is returned when metadata is not available.
 var ErrMetadataNotSupported = ErrMetadataUnsupported
 
-// Open opens the first configured backend that is available.
+// Open opens the first configured provider that is available.
 func Open(ctx context.Context, opts ...Option) (Keyring, error) {
 	cfg, err := newOptions(opts)
 	if err != nil {
@@ -208,50 +178,6 @@ func Available(opts ...Option) ([]Backend, error) {
 	return availableBackends(providers, order), nil
 }
 
-// AvailableBackends provides a slice of all available backend keys on the
-// current OS.
-func AvailableBackends() []Backend {
-	backends, err := Available()
-	if err != nil {
-		return nil
-	}
-	return backends
-}
-
-// DefaultProviders returns the built-in backend providers.
-func DefaultProviders() []Provider {
-	providers := make([]Provider, 0, len(supportedBackends))
-	for _, backend := range backendOrder {
-		if _, ok := supportedBackends[backend]; ok {
-			providers = append(providers, defaultProviderFor(backend))
-		}
-	}
-	return providers
-}
-
-func defaultProviderFor(backend Backend) Provider {
-	switch backend {
-	case InvalidBackend:
-		return Provider{}
-	case WinCredBackend:
-		return WinCredProvider()
-	case KeychainBackend:
-		return KeychainProvider()
-	case SecretServiceBackend:
-		return SecretServiceProvider()
-	case KWalletBackend:
-		return KWalletProvider()
-	case KeyCtlBackend:
-		return KeyCtlProvider()
-	case PassBackend:
-		return PassProvider()
-	case FileBackend:
-		return FileProvider()
-	default:
-		return Provider{}
-	}
-}
-
 func shouldFallback(policy FallbackPolicy, err error) bool {
 	if policy == FallbackOnError {
 		return true
@@ -261,12 +187,10 @@ func shouldFallback(policy FallbackPolicy, err error) bool {
 
 func providerRegistry(providers []Provider) (map[Backend]Provider, []Backend) {
 	out := make(map[Backend]Provider, len(providers))
-	order := make([]Backend, 0, len(backendOrder)+len(providers))
-
-	order = append(order, backendOrder...)
+	order := make([]Backend, 0, len(providers))
 
 	for _, provider := range providers {
-		if _, ok := out[provider.Backend]; !ok && !isDefaultBackend(provider.Backend) {
+		if _, ok := out[provider.Backend]; !ok {
 			order = append(order, provider.Backend)
 		}
 		out[provider.Backend] = provider
@@ -283,36 +207,6 @@ func availableBackends(providers map[Backend]Provider, order []Backend) []Backen
 		}
 	}
 	return out
-}
-
-func isDefaultBackend(backend Backend) bool {
-	for _, existing := range backendOrder {
-		if backend == existing {
-			return true
-		}
-	}
-	return false
-}
-
-func mapError(err error) error {
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, ErrNoAvailImpl):
-		return errors.Join(ErrUnavailable, err)
-	case errors.Is(err, ErrKeyNotFound):
-		return errors.Join(ErrNotFound, err)
-	case errors.Is(err, ErrAccessDenied):
-		return errors.Join(ErrAccessDenied, err)
-	case errors.Is(err, ErrCredentialTooLarge):
-		return errors.Join(ErrTooLarge, err)
-	case errors.Is(err, ErrMetadataNotSupported):
-		return errors.Join(ErrMetadataUnsupported, err)
-	case errors.Is(err, ErrMetadataNeedsCredentials):
-		return errors.Join(ErrMetadataNeedsUnlock, err)
-	default:
-		return err
-	}
 }
 
 // Debug specifies whether to print debugging output.

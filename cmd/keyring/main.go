@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/lox/keyring"
+	"github.com/lox/keyring/v2"
 )
 
 func main() {
@@ -24,16 +24,11 @@ func main() {
 	actionListKeys := flag.Bool("list-keys", false, "Whether to list keys")
 	actionSetValue := flag.String("set", "", "The value to set")
 
-	// keychain
-	keychainName := flag.String("keychain", "login", "The keychain to search")
-
 	flag.Parse()
 
 	// Handle -list-backends
 	if *listBackends {
-		for _, b := range keyring.AvailableBackends() {
-			fmt.Printf("%s\n", b)
-		}
+		fmt.Printf("%s\n", keyring.FileBackend)
 		os.Exit(0)
 	}
 
@@ -44,24 +39,24 @@ func main() {
 
 	var allowedBackends []keyring.Backend
 	if *backend != "" {
-		if !hasBackend(*backend) {
-			log.Fatalf("Backend %q isn't available. Use -list-backends to see what is.", *backend)
+		if keyring.Backend(*backend) != keyring.FileBackend {
+			log.Fatalf("Backend %q isn't built into this CLI. Use -list-backends to see what is.", *backend)
 		}
 		allowedBackends = append(allowedBackends, keyring.Backend(*backend))
 	} else {
-		allowedBackends = keyring.AvailableBackends()
+		allowedBackends = []keyring.Backend{keyring.FileBackend}
 	}
 
+	if *fileDir == "" {
+		log.Fatal("-file-dir is required")
+	}
 	opts := []keyring.Option{
 		keyring.WithServiceName(*serviceName),
 		keyring.WithBackends(allowedBackends...),
-		keyring.WithProvider(keyring.KeychainProvider(keyring.KeychainName(*keychainName))),
-	}
-	if *fileDir != "" {
-		opts = append(opts, keyring.WithProvider(keyring.FileProvider(
+		keyring.WithProvider(keyring.FileProvider(
 			keyring.FileDir(*fileDir),
 			keyring.FilePrompt(keyring.TerminalPrompt),
-		)))
+		)),
 	}
 
 	ring, err := keyring.Open(ctx, opts...)
@@ -108,14 +103,4 @@ func main() {
 		}
 		fmt.Printf("%s", i.Data)
 	}
-}
-
-func hasBackend(key string) bool {
-	for _, b := range keyring.AvailableBackends() {
-		if keyring.Backend(key) == b {
-			return true
-		}
-	}
-
-	return false
 }
