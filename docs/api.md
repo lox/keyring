@@ -1,9 +1,9 @@
 # API
 
-The root `github.com/lox/keyring` package keeps keyring's stable desktop
-backends in this repository, but moves backend selection to explicit provider
-values. Heavy or vendor-specific backends such as 1Password can live in separate
-modules while still participating in the same `Open` call.
+The root `github.com/lox/keyring/v2` package keeps keyring's shared API and
+encrypted file backend in this repository. Desktop, command-backed, and vendor
+providers can live in separate modules while still participating in the same
+`Open` call.
 
 ## Opening A Keyring
 
@@ -12,38 +12,40 @@ ctx := context.Background()
 
 ring, err := keyring.Open(ctx,
 	keyring.WithServiceName("gog"),
-	keyring.WithBackends(keyring.KeychainBackend, keyring.FileBackend),
-	keyring.WithProvider(keyring.FileProvider(
-		keyring.FileDir("/path/to/keyring"),
-		keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
-	)),
+	keyring.WithProviders(
+		keychain.Provider(),
+		keyring.FileProvider(
+			keyring.FileDir("/path/to/keyring"),
+			keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+		),
+	),
 )
 if err != nil {
 	return err
 }
 ```
 
-If `WithBackends` is not provided, `Open` tries the built-in providers that are
-available on the current platform in the package's default order. Additional
-providers can be added with `WithProvider` or `WithProviders`.
+If `WithBackends` is not provided, `Open` tries providers in the order they were
+passed to `WithProvider` or `WithProviders`.
 
 ## Migrating From Config
 
-Old callers opened keyrings with `keyring.Open(keyring.Config{...})`. New
-callers pass `context.Context` plus options:
+The old `keyring.Config` entry point has been removed. New callers pass
+`context.Context` plus options:
 
 ```go
 ring, err := keyring.Open(ctx,
 	keyring.WithServiceName("aws-vault"),
-	keyring.WithBackends(keyring.KeychainBackend, keyring.FileBackend),
-	keyring.WithProvider(keyring.KeychainProvider(
-		keyring.KeychainName("aws-vault"),
-		keyring.KeychainTrustApplication(true),
-	)),
-	keyring.WithProvider(keyring.FileProvider(
-		keyring.FileDir("~/.awsvault/keys/"),
-		keyring.FilePrompt(fileKeyringPassphrasePrompt),
-	)),
+	keyring.WithProviders(
+		keychain.Provider(
+			keychain.Name("aws-vault"),
+			keychain.TrustApplication(true),
+		),
+		keyring.FileProvider(
+			keyring.FileDir("~/.awsvault/keys/"),
+			keyring.FilePrompt(fileKeyringPassphrasePrompt),
+		),
+	),
 )
 ```
 
@@ -51,7 +53,7 @@ The mechanical mapping is:
 
 - `Config.ServiceName` -> `WithServiceName`
 - `Config.AllowedBackends` -> `WithBackends`
-- backend-specific `Config` fields -> the matching built-in provider options
+- backend-specific `Config` fields -> the matching provider module options
 - `ring.Get(key)` / `ring.Set(item)` / `ring.Keys()` -> pass `ctx` as the first argument
 - `ring.GetMetadata(key)` -> use `MetadataReader` when the opened keyring supports it
 
@@ -68,7 +70,7 @@ type Keyring interface {
 }
 ```
 
-Some built-in providers own OS resources. When an opened keyring also implements
+Some provider modules own OS resources. When an opened keyring also implements
 `io.Closer`, callers should close it when they are done.
 
 Metadata is optional because not every backend can provide it without prompting
@@ -91,9 +93,8 @@ type Provider struct {
 }
 ```
 
-A provider with the same backend name as a built-in backend replaces that
-built-in provider for the current `Open` call. That lets applications wrap or
-specialize built-in behavior without changing the core library.
+A provider with the same backend name as an earlier provider replaces it for the
+current `Open` call. Provider order is fallback order.
 
 ## File Backend
 
@@ -149,11 +150,17 @@ outside the core module:
 ```go
 ring, err := keyring.Open(ctx,
 	keyring.WithServiceName("gog"),
-	keyring.WithBackends(onepassword.Backend, keyring.KeychainBackend, keyring.FileBackend),
-	keyring.WithProvider(onepassword.Provider(
-		onepassword.WithVault("Private"),
-		onepassword.WithAccount("example.1password.com"),
-	)),
+	keyring.WithProviders(
+		onepassword.Provider(
+			onepassword.WithVault("Private"),
+			onepassword.WithAccount("example.1password.com"),
+		),
+		keychain.Provider(),
+		keyring.FileProvider(
+			keyring.FileDir(keyringDir),
+			keyring.FilePrompt(prompt),
+		),
+	),
 )
 ```
 

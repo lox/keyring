@@ -140,13 +140,38 @@ func TestOpenCanWrapBuiltinFileBackend(t *testing.T) {
 	}
 }
 
-func TestBackendAdapterClosesBackend(t *testing.T) {
-	backend := &testClosingBackend{}
-	if err := (backendAdapter{ring: backend}).Close(); err != nil {
-		t.Fatal(err)
+func TestOpenUsesProviderOrder(t *testing.T) {
+	ctx := context.Background()
+	var calls []Backend
+
+	ring, err := Open(ctx,
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(context.Context, OpenOptions) (Keyring, error) {
+				calls = append(calls, testExternalBackend)
+				return newArrayKeyring(ctx, []Item{{Key: "source", Data: []byte("external")}}), nil
+			},
+		}),
+		WithProvider(Provider{
+			Backend: FileBackend,
+			Open: func(context.Context, OpenOptions) (Keyring, error) {
+				calls = append(calls, FileBackend)
+				return newArrayKeyring(ctx, []Item{{Key: "source", Data: []byte("file")}}), nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
 	}
-	if !backend.closed {
-		t.Fatal("expected adapter to close backend")
+	if !slices.Equal(calls, []Backend{testExternalBackend}) {
+		t.Fatalf("expected external provider first, got %v", calls)
+	}
+	item, err := ring.Get(ctx, "source")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(item.Data) != "external" {
+		t.Fatalf("expected external provider result, got %q", item.Data)
 	}
 }
 
@@ -168,35 +193,6 @@ func TestOpenFallsBackWhenFileProviderIsNotConfigured(t *testing.T) {
 	if ring == nil {
 		t.Fatal("expected fallback ring")
 	}
-}
-
-type testClosingBackend struct {
-	closed bool
-}
-
-func (k *testClosingBackend) Get(string) (Item, error) {
-	return Item{}, ErrNotFound
-}
-
-func (k *testClosingBackend) GetMetadata(string) (Metadata, error) {
-	return Metadata{}, ErrMetadataUnsupported
-}
-
-func (k *testClosingBackend) Set(Item) error {
-	return nil
-}
-
-func (k *testClosingBackend) Remove(string) error {
-	return nil
-}
-
-func (k *testClosingBackend) Keys() ([]string, error) {
-	return nil, nil
-}
-
-func (k *testClosingBackend) Close() error {
-	k.closed = true
-	return nil
 }
 
 func TestOpenRejectsFileProviderWithoutPrompt(t *testing.T) {
@@ -310,42 +306,6 @@ func TestOpenStopsOnNonUnavailableByDefault(t *testing.T) {
 	)
 	if !errors.Is(err, errDenied) {
 		t.Fatalf("expected denied error, got %v", err)
-	}
-}
-
-func TestBuiltinProviderStopsOnNonUnavailableOpenError(t *testing.T) {
-	backend := Backend("test-builtin-open-error")
-	errOpen := errors.New("bad config")
-	calledFallback := false
-
-	oldOpener, hadOpener := supportedBackends[backend]
-	supportedBackends[backend] = func(Config) (backendKeyring, error) {
-		return nil, errOpen
-	}
-	t.Cleanup(func() {
-		if hadOpener {
-			supportedBackends[backend] = oldOpener
-			return
-		}
-		delete(supportedBackends, backend)
-	})
-
-	_, err := Open(context.Background(),
-		WithBackends(backend, testExternalBackend),
-		WithProvider(builtinProvider(backend, nil)),
-		WithProvider(Provider{
-			Backend: testExternalBackend,
-			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
-				calledFallback = true
-				return newArrayKeyring(ctx, nil), nil
-			},
-		}),
-	)
-	if !errors.Is(err, errOpen) {
-		t.Fatalf("expected opener error, got %v", err)
-	}
-	if calledFallback {
-		t.Fatal("expected non-unavailable opener error to stop fallback")
 	}
 }
 

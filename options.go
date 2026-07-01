@@ -73,7 +73,6 @@ func WithFallbackPolicy(policy FallbackPolicy) Option {
 
 func newOptions(opts []Option) (options, error) {
 	cfg := options{
-		providers:      DefaultProviders(),
 		fallbackPolicy: FallbackOnUnavailable,
 	}
 	for _, opt := range opts {

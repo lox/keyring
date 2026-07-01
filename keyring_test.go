@@ -4,14 +4,19 @@ import (
 	"context"
 	"log"
 
-	"github.com/lox/keyring"
+	"github.com/lox/keyring/v2"
 )
 
 func ExampleOpen() {
 	ctx := context.Background()
 
-	// Use the best keyring implementation for your operating system
-	kr, err := keyring.Open(ctx, keyring.WithServiceName("my-service"))
+	kr, err := keyring.Open(ctx,
+		keyring.WithServiceName("my-service"),
+		keyring.WithProvider(keyring.FileProvider(
+			keyring.FileDir("/path/to/keyring"),
+			keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+		)),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
