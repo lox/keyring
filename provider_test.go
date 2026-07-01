@@ -140,6 +140,36 @@ func TestOpenCanWrapBuiltinFileBackend(t *testing.T) {
 	}
 }
 
+func TestOpenFallsBackWhenFileProviderIsNotConfigured(t *testing.T) {
+	ctx := context.Background()
+
+	ring, err := Open(ctx,
+		WithBackends(FileBackend, testExternalBackend),
+		WithProvider(Provider{
+			Backend: testExternalBackend,
+			Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) {
+				return newArrayKeyring(ctx, nil), nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if ring == nil {
+		t.Fatal("expected fallback ring")
+	}
+}
+
+func TestOpenRejectsFileProviderWithoutPrompt(t *testing.T) {
+	_, err := Open(context.Background(),
+		WithBackends(FileBackend),
+		WithProvider(FileProvider(FileDir(t.TempDir()))),
+	)
+	if !errors.Is(err, ErrInvalidOption) {
+		t.Fatalf("expected invalid file backend, got %v", err)
+	}
+}
+
 func TestAvailableIncludesExternalProviders(t *testing.T) {
 	got, err := Available(WithProviders(
 		Provider{Backend: FileBackend, Open: func(ctx context.Context, _ OpenOptions) (Keyring, error) { return newArrayKeyring(ctx, nil), nil }},
