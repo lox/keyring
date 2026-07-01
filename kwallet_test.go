@@ -37,3 +37,22 @@ func TestKWalletOpenFallsBackWhenDBusIsUnavailable(t *testing.T) {
 		t.Fatalf("expected *fileKeyring fallback, got %T", adapter.ring)
 	}
 }
+
+func TestKWalletCloseClosesDBusConnection(t *testing.T) {
+	closed := false
+	ring := &kwalletKeyring{
+		wallet: kwalletBinding{
+			closeFunc: func() error {
+				closed = true
+				return nil
+			},
+		},
+	}
+
+	if err := ring.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected close to close DBus connection")
+	}
+}

@@ -9,20 +9,18 @@ import (
 	"os"
 	"sort"
 	"testing"
-
-	"github.com/gsterjov/go-libsecret"
 )
 
 // NOTE: These tests are not runnable from a headless environment such as
-// Docker or a CI pipeline due to the DBus "prompt" interface being called
-// by the underlying go-libsecret when creating and unlocking a keychain.
+// Docker or a CI pipeline due to the DBus "prompt" interface being called when
+// creating and unlocking a keychain.
 //
 // TODO: Investigate a way to automate the prompting. Some ideas:
 //
 //  1. I've looked extensively but have not found a headless CLI tool that
 //     could be run in the background of eg: a docker container
 //  2. It might be possible to make a mock prompter that connects to DBus
-//     and provides the Prompt interface using the go-libsecret library.
+//     and provides the Prompt interface.
 
 func libSecretSetup(t *testing.T) (backendKeyring, func(t *testing.T)) {
 	t.Helper()
@@ -30,7 +28,7 @@ func libSecretSetup(t *testing.T) (backendKeyring, func(t *testing.T)) {
 		t.Skip("Skipping testing in CI environment")
 	}
 
-	service, err := libsecret.NewService()
+	service, err := newSecretService()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +47,7 @@ func libSecretSetup(t *testing.T) (backendKeyring, func(t *testing.T)) {
 func TestLibSecretOpenFallsBackWhenDBusIsUnavailable(t *testing.T) {
 	dbusErr := errors.New("dbus unavailable")
 	originalNewService := newLibSecretService
-	newLibSecretService = func() (*libsecret.Service, error) {
+	newLibSecretService = func() (*secretService, error) {
 		return nil, dbusErr
 	}
 	t.Cleanup(func() {
@@ -72,6 +70,28 @@ func TestLibSecretOpenFallsBackWhenDBusIsUnavailable(t *testing.T) {
 	}
 	if _, ok := adapter.ring.(*fileKeyring); !ok {
 		t.Fatalf("expected *fileKeyring fallback, got %T", adapter.ring)
+	}
+}
+
+func TestLibSecretCloseClosesDBusConnection(t *testing.T) {
+	closed := false
+	kr := &secretsKeyring{
+		service: &secretService{
+			closeFunc: func() error {
+				closed = true
+				return nil
+			},
+		},
+	}
+
+	if err := kr.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected close to close DBus connection")
+	}
+	if kr.service != nil || kr.collection != nil || kr.session != nil {
+		t.Fatal("expected close to clear cached Secret Service state")
 	}
 }
 

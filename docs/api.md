@@ -68,6 +68,9 @@ type Keyring interface {
 }
 ```
 
+Some built-in providers own OS resources. When an opened keyring also implements
+`io.Closer`, callers should close it when they are done.
+
 Metadata is optional because not every backend can provide it without prompting
 or exposing implementation details:
 
