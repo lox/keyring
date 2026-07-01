@@ -18,6 +18,12 @@ import (
 
 func init() {
 	supportedBackends[FileBackend] = opener(func(cfg Config) (backendKeyring, error) {
+		if cfg.FileDir == "" {
+			return nil, fmt.Errorf("%w: file backend requires FileDir", ErrUnavailable)
+		}
+		if cfg.FilePasswordFunc == nil {
+			return nil, fmt.Errorf("%w: file backend requires FilePasswordFunc", ErrInvalidOption)
+		}
 		return &fileKeyring{
 			dir:          cfg.FileDir,
 			passwordFunc: cfg.FilePasswordFunc,

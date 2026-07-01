@@ -16,6 +16,7 @@ func main() {
 	serviceName := flag.String("service", "example", "The keyring service to use")
 	keyName := flag.String("key", "example", "The key to use")
 	backend := flag.String("backend", "", "A specific backend to use")
+	fileDir := flag.String("file-dir", "", "Directory to use with the file backend")
 	debug := flag.Bool("debug", false, "Whether to enable debugging in keyring")
 	listBackends := flag.Bool("list-backends", false, "Whether to list backends")
 
@@ -51,11 +52,19 @@ func main() {
 		allowedBackends = keyring.AvailableBackends()
 	}
 
-	ring, err := keyring.Open(ctx,
+	opts := []keyring.Option{
 		keyring.WithServiceName(*serviceName),
 		keyring.WithBackends(allowedBackends...),
 		keyring.WithProvider(keyring.KeychainProvider(keyring.KeychainName(*keychainName))),
-	)
+	}
+	if *fileDir != "" {
+		opts = append(opts, keyring.WithProvider(keyring.FileProvider(
+			keyring.FileDir(*fileDir),
+			keyring.FilePrompt(keyring.TerminalPrompt),
+		)))
+	}
+
+	ring, err := keyring.Open(ctx, opts...)
 	if err != nil {
 		log.Fatal(err)
 	}

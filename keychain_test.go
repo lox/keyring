@@ -197,6 +197,10 @@ func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenFileBackendIsPreferred
 			KeychainName(tempKeychainName(t)),
 			KeychainSynchronizable(true),
 		)),
+		WithProvider(FileProvider(
+			FileDir(t.TempDir()),
+			FilePrompt(FixedStringPrompt("test password")),
+		)),
 	)
 	if err != nil {
 		t.Fatalf("expected file backend to open before keychain validation, got %v", err)
@@ -223,6 +227,10 @@ func TestOSXKeychainAllowsSynchronizableCustomKeychainWhenKeychainIsUnsupported(
 	ring, err := Open(context.Background(),
 		WithServiceName("test"),
 		WithBackends(KeychainBackend, FileBackend),
+		WithProvider(FileProvider(
+			FileDir(t.TempDir()),
+			FilePrompt(FixedStringPrompt("test password")),
+		)),
 	)
 	if err != nil {
 		t.Fatalf("expected fallback backend to open when keychain backend is unsupported, got %v", err)
