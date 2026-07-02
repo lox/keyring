@@ -29,6 +29,7 @@ the platform dependencies they actually use:
 * [`github.com/lox/keyring-pass`](https://github.com/lox/keyring-pass) - pass
 * [`github.com/lox/keyring-kwallet`](https://github.com/lox/keyring-kwallet) - KWallet
 * [`github.com/lox/keyring-keyctl`](https://github.com/lox/keyring-keyctl) - Linux keyctl
+* [`github.com/lox/keyring-1password`](https://github.com/lox/keyring-1password) - 1Password
 
 ## Code map
 
