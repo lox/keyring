@@ -19,9 +19,16 @@ drop-in replacement for `github.com/99designs/keyring`.
 
 This is not the only maintained continuation of the project. [ByteNess/keyring](https://github.com/ByteNess/keyring/) is also a maintained fork, with its own feature set and maintenance choices.
 
-The core module includes the encrypted file backend. OS and command-backed
-providers can be published as separate modules instead of adding their
-dependencies here.
+The core module includes the encrypted file backend. First-party OS and
+command-backed providers live in separate modules so applications only pull in
+the platform dependencies they actually use:
+
+* [`github.com/lox/keyring-keychain`](https://github.com/lox/keyring-keychain) - macOS Keychain
+* [`github.com/lox/keyring-wincred`](https://github.com/lox/keyring-wincred) - Windows Credential Manager
+* [`github.com/lox/keyring-secretservice`](https://github.com/lox/keyring-secretservice) - Secret Service
+* [`github.com/lox/keyring-pass`](https://github.com/lox/keyring-pass) - pass
+* [`github.com/lox/keyring-kwallet`](https://github.com/lox/keyring-kwallet) - KWallet
+* [`github.com/lox/keyring-keyctl`](https://github.com/lox/keyring-keyctl) - Linux keyctl
 
 ## Code map
 
@@ -63,6 +70,16 @@ For more detail on the API please check [the keyring package docs](https://pkg.g
 
 The root package keeps the shared API and file backend in this repository while
 desktop and command-backed providers live in their own modules.
+
+Import whichever provider modules your application supports and pass their
+providers to `Open`:
+
+```go
+import (
+	"github.com/lox/keyring/v2"
+	keychain "github.com/lox/keyring-keychain"
+)
+```
 
 ```go
 ctx := context.Background()
