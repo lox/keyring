@@ -167,6 +167,30 @@ ring, err := keyring.Open(ctx,
 The core package does not need to know that `onepassword.Backend` exists. It only
 needs a provider value that implements the shared contract.
 
+### macOS Keychain Touch ID
+
+The `github.com/lox/keyring-keychain` provider supports Touch ID without making
+CLI applications look like signed macOS app bundles:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("gog"),
+	keyring.WithProvider(keychain.Provider(
+		keychain.TouchID(keychain.TouchIDConfig{
+			Reason: "access gog credentials",
+		}),
+	)),
+)
+```
+
+`TouchID` encrypts item data to a per-item Secure Enclave-backed key and stores
+the encrypted envelope as a normal keychain item. Reading that item back prompts
+for Touch ID, or the account password under the default user-presence policy.
+
+Touch ID-protected items are device-bound and cannot be combined with
+`keychain.Synchronizable(true)`. Items written before enabling `TouchID` remain
+readable without a prompt until the application rewrites them.
+
 ## Fallback
 
 By default, `Open` tries the next backend only when a provider returns

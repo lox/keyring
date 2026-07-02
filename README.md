@@ -23,7 +23,7 @@ The core module includes the encrypted file backend. First-party OS and
 command-backed providers live in separate modules so applications only pull in
 the platform dependencies they actually use:
 
-* [`github.com/lox/keyring-keychain`](https://github.com/lox/keyring-keychain) - macOS Keychain
+* [`github.com/lox/keyring-keychain`](https://github.com/lox/keyring-keychain) - macOS Keychain, including CLI-friendly Touch ID protection
 * [`github.com/lox/keyring-wincred`](https://github.com/lox/keyring-wincred) - Windows Credential Manager
 * [`github.com/lox/keyring-secretservice`](https://github.com/lox/keyring-secretservice) - Secret Service
 * [`github.com/lox/keyring-pass`](https://github.com/lox/keyring-pass) - pass
@@ -104,6 +104,27 @@ _ = ring.Set(ctx, keyring.Item{
 	Data: []byte("secret-bar"),
 })
 ```
+
+The macOS Keychain provider can protect item data with Touch ID from ordinary
+Go CLI binaries. `keychain.TouchID` encrypts each written item to a
+Secure Enclave-backed key and stores the encrypted envelope as a regular
+keychain item, so callers do not need an app bundle, provisioning profile, or
+macOS app entitlement:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithProvider(keychain.Provider(
+		keychain.TouchID(keychain.TouchIDConfig{
+			Reason: "access example credentials",
+		}),
+	)),
+)
+```
+
+Touch ID-protected items are bound to the Mac that wrote them and cannot be
+synchronizable. Existing unprotected items still read normally until the
+application rewrites them with the Touch ID option enabled.
 
 External providers can live in separate modules without adding their
 dependencies to the core package:
