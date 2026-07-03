@@ -1,7 +1,7 @@
 Keyring
 =======
 [![Maintained fork](https://img.shields.io/badge/maintained%20fork-lox%2Fkeyring-007d9c)](https://github.com/lox/keyring)
-[![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/lox/keyring/actions/workflows/test.yml)
+[![CI](https://github.com/lox/keyring/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/lox/keyring/actions/workflows/test.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/lox/keyring/v2.svg)](https://pkg.go.dev/github.com/lox/keyring/v2)
 
 Keyring provides a context-aware provider API for secure credential storage
