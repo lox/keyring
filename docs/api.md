@@ -82,6 +82,19 @@ type MetadataReader interface {
 }
 ```
 
+## Operation Timeouts
+
+Callers that need a hard per-operation deadline can wrap an opened keyring:
+
+```go
+ring = keyring.Timeout(ring, 10*time.Second)
+```
+
+The wrapper passes a cancellable context to the provider and returns an error
+wrapping `context.DeadlineExceeded` when the timeout wins. If a provider ignores
+context cancellation, its worker goroutine may stay blocked until that provider
+returns.
+
 ## Providers
 
 Providers are ordinary values:
