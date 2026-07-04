@@ -30,6 +30,7 @@ the platform dependencies they actually use:
 * [`github.com/lox/keyring-kwallet`](https://github.com/lox/keyring-kwallet) - KWallet
 * [`github.com/lox/keyring-keyctl`](https://github.com/lox/keyring-keyctl) - Linux keyctl
 * [`github.com/lox/keyring-1password`](https://github.com/lox/keyring-1password) - 1Password
+* [`github.com/lox/keyring-defaults`](https://github.com/lox/keyring-defaults) - default first-party provider list
 
 ## Code map
 
@@ -144,6 +145,22 @@ ring, err := keyring.Open(ctx,
 ```
 
 See [docs/api.md](docs/api.md) and the package examples for more detail.
+
+Applications that want the common first-party provider order without importing
+each provider directly can import `github.com/lox/keyring-defaults` as
+`defaults`:
+
+```go
+ring, err := keyring.Open(ctx,
+	keyring.WithServiceName("example"),
+	keyring.WithProviders(defaults.Providers(
+		keyring.FileProvider(
+			keyring.FileDir("/path/to/keyring"),
+			keyring.FilePrompt(keyring.FixedStringPrompt("passphrase")),
+		),
+	)...),
+)
+```
 
 ## Encrypted file backend
 
