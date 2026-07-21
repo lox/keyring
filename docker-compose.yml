@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   keyring:
-    image: golang:1.19
+    image: golang:1.26@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647
     volumes:
       - .:/usr/local/src/keyring
     working_dir: /usr/local/src/keyring
