@@ -1,6 +1,16 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:best-practices"],
+  "automergeStrategy": "squash",
+  "automergeType": "pr",
+  "extends": ["config:best-practices", ":automergeStableNonMajor"],
   "forkProcessing": "enabled",
+  "packageRules": [
+    {
+      "description": "Automerge low-risk updates after CI",
+      "automerge": true,
+      "matchUpdateTypes": ["digest", "pin", "pinDigest", "patch"]
+    }
+  ],
+  "platformAutomerge": false,
   "semanticCommits": "enabled"
 }
